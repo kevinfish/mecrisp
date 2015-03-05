@@ -1,0 +1,12 @@
+
+$221 constant P4IN
+$223 constant P4OUT
+$225 constant P4DIR
+
+: blinky ( -- )
+  1 P4DIR c!
+  begin
+    1 P4OUT cxor!
+    60000 0 do loop
+  key? until
+;

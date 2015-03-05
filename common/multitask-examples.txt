@@ -1,0 +1,25 @@
+compiletoram eint multitask
+
+0 variable seconds
+task: timetask
+
+: time& ( -- )
+  timetask background
+    begin
+      key? if boot-task wake then
+      1 seconds +!
+      seconds @ . cr
+      stop
+    again
+;
+
+time& tasks
+
+: tick ( -- ) timetask wake ;
+
+ ' tick irq-watchdog !
+ 1 0 c!       \ Enable Watchdog IRQ in IE1
+ $5A10 $120 ! \ Set Watchdog for ACKL/32768 to get an one second interrupt
+
+stop \ Idle the boot task
+ 

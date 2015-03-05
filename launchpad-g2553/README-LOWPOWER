@@ -1,0 +1,25 @@
+Mecrisp Lowpower for G2553
+
+For saving power, this experimental release for MSP430G2553 runs 
+its communication with a 32768 Hz ACLK crystal and in LPM3.
+
+One example to use lowpower modes to wait:
+
+: delayticks ( ticks -- ) \ Wait desired number of ticks with 32768 Hz.
+
+  ['] wakeup irq-timerb0 ! \ Set Wakeup-Interrupt
+  $10  $0182 ! \ Enable Interrupt
+  0    $0190 ! \ Clear TAR
+       $0192 ! \ Set desired delay
+  $110 $0180 ! \ ACLK, Up-Mode
+  lpm3         \ Sleep in LPM3
+  0 $180 !     \ Stop Timer
+;
+
+Interrupts are enabled at the beginning.
+
+You can compare power consumption with normal operation by 
+disabling interrupts with DINT and reenable them with EINT while
+measuring current. Terminal routines can work in both modes.
+
+Matthias Koch, Summer 2013

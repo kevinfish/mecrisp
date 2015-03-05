@@ -1,0 +1,32 @@
+
+: table   cr 11 1 do
+                    i 8 = if leave then
+                    11 1 do
+                           i j * . space
+                           j 5 = if leave then
+                           j 2 = if leave then
+                         loop
+                    cr
+                  loop ;
+table
+
+: stars 0 ?do [char] * emit loop ;
+
+0 stars
+1 stars
+2 stars
+
+: 5+ 5 + 1-foldable ;
+: 11more 6 5+ + 1-foldable ;
+
+3 11more .
+
+hex
+42 variable answer
+: toggleanswer 1 answer xor! ;
+: shakeanswer answer @ >< %1010 or answer ! ;
+
+answer @ u.
+toggleanswer answer @ u.
+shakeanswer  answer @ u.
+decimal

@@ -1,0 +1,576 @@
+
+compiletoflash
+
+\ MSP430 Assembler, Copyright (C) 2012  Matthias Koch
+\ This is free software under GNU General Public License v3.
+\ Resolves constants, symbols and variable names and
+\ gives you a comfortable way to write machine instructions.
+
+: zero-operand <builds , $30 setflags
+                 does> @ , ;
+
+%0001001100000000 zero-operand reti
+
+\ Emulated instructions
+$4130 zero-operand ret
+$c312 zero-operand clrc
+$c222 zero-operand clrn
+$c322 zero-operand clrz
+$d312 zero-operand setc
+$d222 zero-operand setn
+$d322 zero-operand setz
+
+\ nop1 and nop2 wait 1 or 2 clock cycles.
+\ Internal nop of Forth gets optimized away,
+\ as it is intended for open IRQ handlers.
+
+$4303 zero-operand nop1
+$3c00 zero-operand nop2
+
+
+\ Jumps and Labels
+
+0 variable label-
+0 variable label--
+0 variable label---
+
+: l-:   label-- @ label--- !
+        label-  @ label--  !
+        here      label-   !
+immediate ;
+
+\ Forward labels
+\ Idea: Remember place and jump-opcodes to be filled in when label is reached.
+
+0. 2variable label-f1
+0. 2variable label-f2
+0. 2variable label-f3
+0. 2variable label-f4
+0. 2variable label-f5
+0. 2variable label-f6
+0. 2variable label-f7
+0. 2variable label-f8
+
+: check+label ( Sprungkonstruktadresse -- )
+  dup @ $000F and ( Addr Labelzähler )
+    dup if \ Ungleich 0 ( Addr Labelzähler )
+
+          1 = if ( Adresse )
+                dup 2@ ( Adresse Lückenadresse Labelopcode )
+                1- \ Label 1 auf 0 setzen, damit Opcode stimmt !
+                ( Adresse Lückenadresse Opcode-Bitmaske )
+                here swap
+                ( Adresse Lückenadresse Zieladresse Opcode-Bitmaske )
+                jump,
+                ( Adresse )
+                >r 0. r> 2!  \ Sprunglabel aus Tabelle löschen
+
+              else
+
+                dup ( Adresse Adresse )
+                @   ( Adresse Labelopcode )
+                1-  ( Adresse Labelopcode* )
+                swap ( Labelopcode* Adresse )
+                !
+              then
+
+        else \ Null - nichts tun
+          ( Addr Labelzähler )
+          2drop
+        then
+;
+
+: l+:
+  \ Time to fill in opcodes for forward jumps.
+  \ Crawl the notes to see what is pending.
+  label-f1 check+label
+  label-f2 check+label
+  label-f3 check+label
+  label-f4 check+label
+  label-f5 check+label
+  label-f6 check+label
+  label-f7 check+label
+  label-f8 check+label
+immediate ;
+
+: remember+jump ( Zieladresse Opcode )
+  \ Find an empty location in the forward-jump-notes.
+  \ If it contains zero, the fresh wish for a jump can be filled in.
+  label-f1 @ 0= if label-f1 2!  exit then
+  label-f2 @ 0= if label-f2 2!  exit then
+  label-f3 @ 0= if label-f3 2!  exit then
+  label-f4 @ 0= if label-f4 2!  exit then
+  label-f5 @ 0= if label-f5 2!  exit then
+  label-f6 @ 0= if label-f6 2!  exit then
+  label-f7 @ 0= if label-f7 2!  exit then
+  label-f8 @ 0= if label-f8 2!  exit then
+  ." Too many forward references" cr quit
+;
+
+
+
+: jump-destination ( Opcode Stringaddress Length -- Opcode Flag )
+    2dup s" +"   compare if 2drop 1 or false exit then  \ False: Has to be resolved later
+    2dup s" ++"  compare if 2drop 2 or false exit then
+    2dup s" +++" compare if 2drop 3 or false exit then
+
+    2dup s" -"   compare if 2drop label-   @  here - true exit then \ True: Insert now
+    2dup s" --"  compare if 2drop label--  @  here - true exit then
+    2dup s" ---" compare if 2drop label--- @  here - true exit then
+
+    number   1 <> if ." Jump into the ocean " quit then
+    true
+;
+
+: jumps <builds , $30 setflags
+        does> @ token
+              jump-destination  \ Maybe some checks for jump distance soon ?
+              if   \ Backward Jump
+                2-   \ Destination shifted by two bytes for jump opcode itself
+                shr %1111111111 and or ,
+              else \ Forward-Jump
+                here swap remember+jump 2 allot
+              then
+;
+
+%0010000000000000 jumps jne
+%0010000000000000 jumps jnz
+%0010010000000000 jumps jeq
+%0010010000000000 jumps jz
+%0010100000000000 jumps jnc
+%0010100000000000 jumps jlo
+%0010110000000000 jumps jc
+%0010110000000000 jumps jhs
+%0011000000000000 jumps jn
+%0011010000000000 jumps jge
+%0011100000000000 jumps jl
+%0011110000000000 jumps jmp
+
+
+\ Ein paar Stringhelferlein
+\ A few helpers for strings
+
+: vorneabschneiden ( Adresse Length -- Adresse Length )
+  1- swap 1+ swap
+;
+
+: ersteszeichen ( Adresse Length -- Adresse Length Zeichen )
+  over c@
+;
+
+: letzteszeichen ( Adresse Length -- Adresse Length Zeichen )
+  2dup 1- + c@
+;
+
+: hintenabschneiden ( Adresse Length -- Adresse Length )
+  1-
+;
+
+
+\ Muss jetzt noch angegebene Konstanten, Variablen, Wörter und Werte abhandeln.
+\ Das passiert dadurch, dass ich das Ding
+\ - im Dictionary suche
+\     - Falls Variable  --> Variablenadresse
+\     - Falls Konstante --> Konstante holen
+\ - Versuche in eine Zahl umzuwandeln
+
+\ Konstanten im Flash und Variablen im RAM haben Flag $40, Feste Variablen im Flash haben Flag $81, selbstdefinierte Einfachvariablen $C1 oder Doppeltvariablen $C2.
+
+: symbolwert ( Stringaddress Length -- Symbolvalue )
+
+  2dup find ( Adresse Flags ) over 0<>
+        if
+          \ Probe, ob die Flags auf Variablen oder Konstanten hindeuten
+          ( Adresse Flags )
+          swap
+          ( Flags Adresse )
+          over $40 = if execute then \ Konstanten im RAM und Flash; Variablen im RAM
+          over $81 = if execute then \ Kernvariablen im Flash
+          over $C1 = if execute then \ Selbstdefinierte Variablen        im Flash
+          over $C2 = if execute then \ Selbstdefinierte Doppeltvariablen im Flash
+          nip ( Adresse oder geholte Konstante )
+
+          nip nip exit \ Vergiss Stringadresse und Länge, Rücksprung
+        else
+          2drop \ Vergiss Ergebnisse von find
+        then
+
+  2dup number 1 =
+        if \ ."  Zahl " dup u.
+          nip nip exit \ Vergiss Stringadresse und Länge, Rücksprung
+        then
+
+  ." Invalid Symbol: "    \ ." Ungültiges Symbol: "
+  type cr quit
+;
+
+: registerparser ( Stringadresse Length -- Nummer )
+  ersteszeichen [char] r = if base @ >r decimal
+                             vorneabschneiden
+                             number 1 <> if ." Invalid Register" cr quit then
+                             15 and
+                             r> base !
+                           exit
+                           then
+
+  2dup s" pc" compare if 2drop 0 exit then
+  2dup s" sp" compare if 2drop 1 exit then
+  2dup s" sr" compare if 2drop 2 exit then
+  2dup s" cg" compare if 2drop 3 exit then
+
+  ." Invalid Operand" \ ." Falsche Operandenangabe"
+  cr quit
+;
+
+: operandenparser  \ Bearbeitet r14, @r14, @r14+, (r14), #42, &p2out
+  ( -- Daten Bitmaske )
+    token
+
+    \ Bitmaske hat Format:
+    \ Bit 15: Nur als Quelloperand gültig
+    \ Bit 14:
+    \ Bit 13:
+    \ Bit 12: Quelloperand folgt nach Befehl
+
+    \ Bit 11-8: Register für Quelle
+
+    \ Bit 7: Adressmodus Ziel       -  wenn gesetzt, kommt ein Zieloperand dazu
+    \ Bit 6: Immer 0 (Bytebefehl)
+    \ Bit 5: Adressmodus Quelle
+    \ Bit 4: Adressmodus Quelle
+
+    \ Bit 3-0: Register für Ziel
+
+    ersteszeichen [char] # =
+      if  \ ." Konstante "
+        vorneabschneiden \ # weg
+        symbolwert $9030
+      exit
+      then
+
+    ersteszeichen [char] & =
+      if  \ ." Absolut "
+        vorneabschneiden \ & weg
+        symbolwert $1292   \ Emuliert als Index(R2)
+      exit
+      then
+
+    ersteszeichen [char] ( =
+      if  \ ." Indirekt "
+        vorneabschneiden  \ ( weg
+        hintenabschneiden \ ) weg
+
+        registerparser
+        dup 8 lshift or \ Register zweimal in der Bitmaske
+        $1090 or
+
+        token symbolwert swap
+
+      exit
+      then
+
+    ersteszeichen [char] @ =
+      if  \ ." @Register "
+         vorneabschneiden \ @ weg
+
+         letzteszeichen [char] + = if \  ." rinc "
+                                     hintenabschneiden  \ + am Ende weg
+                                     registerparser
+                                     dup 8 lshift or \ Register zweimal in der Bitmaske
+                                     $80B0 or
+
+                                     over \ Hole Opcode, der auf dem Stack liegt... Brauche dies NUR für Schiebebefehle
+                                     $0040 and if \ Bytebefehl ?
+
+                                                 dup $000E and if \ andere Register
+                                                                 $FFFF
+                                                               else \ PC, SP
+                                                                 $FFFE
+                                                               then
+                                               else \ Wordbefehl
+                                                 $FFFE
+                                               then
+
+
+                                     ( $FFFE ) swap
+                                   else
+                                     registerparser
+                                     dup 8 lshift or \ Register zweimal in der Bitmaske
+                                     $00A0 or
+                                     0 swap \ Daten für Emulation von @Register als 0(Register)
+                                   then
+      exit
+      then
+
+    registerparser
+    dup 8 lshift or \ Register zweimal in der Bitmaske
+    $0000 swap
+;
+
+0 constant false
+-1 constant true
+
+
+: ziel-operand ( Opcode -- Daten Opcode true | Opcode false )
+  ( Opcode )
+  \ Zweiter Operand:
+  operandenparser
+  ( Opcode Daten Bitmaske )
+
+  dup $8000 and if ( ." Ungültiger Zieloperand " ) ." Invalid Destination Operand " cr quit then
+
+  dup $0080 and if \ Extradaten vorhanden
+
+                  ( Opcode Daten Bitmaske )
+                  $008F and \ Maske für Zieloperanden
+                  rot ( Daten Bitmaske Opcode )
+                  or ( Daten Opcode* )
+                  true
+
+                else \ Keine Daten für den zweiten Operanden
+
+                  ( Opcode Daten Bitmaske )
+                  $008F and \ Maske für Zieloperanden
+                  nip \ Daten Weg
+                  ( Opcode Bitmaske )
+                  or ( Opcode* )
+                  false
+
+                then
+;
+
+
+: constantengenerator-r3 \ For single- and double-operand-instructions
+  ( Data Bitmask )
+  \ Check if bitmask is for @pc+
+  dup $9030 = if
+
+
+    over  0 = if drop $8303 exit then
+    over  1 = if drop $8313 exit then
+    over  2 = if drop $8323 exit then
+    over -1 = if drop $8333 exit then
+
+              then
+;
+
+: constantengenerator-r2 \ For double-operand-instructions
+  ( Data Bitmask )
+  \ Check if bitmask is for @pc+
+  dup $9030 = if
+
+    over  4 = if drop $8222 exit then
+    over  8 = if drop $8232 exit then
+
+              then
+;
+
+: double-operand <builds , $30 setflags
+                 does> @ ( Opcode )
+
+                       operandenparser ( Opcode -- Opcode Data Bitmask )
+                       constantengenerator-r2
+                       constantengenerator-r3
+                       dup $1000 and
+                       if \ Daten folgen aus dem ersten Operanden
+                         ( Opcode Daten Bitmaske )
+                         $0F30 and \ Maske für Quelloperanden
+                         ( Opcode Daten Bitmaske* )
+                         rot ( Daten Bitmaske* Opcode )
+                         or ( Daten Opcode* )
+
+                         ziel-operand if   ( Daten-1 Daten-2 Opcode ) , swap , ,
+                                      else ( Daten-1 Opcode )         , ,
+                                      then
+
+
+                       else \ Keine Daten folgen aus dem ersten Operanden
+                         ( Opcode Daten Bitmaske )
+                         nip \ Daten weg
+                         $0F30 and \ Maske für Quelloperanden
+                         or ( Opcode* )
+
+                         ziel-operand if ( Daten Opcode ) , ,
+                                      else ( Opcode )       ,
+                                      then
+                       then
+; \ double-operand
+
+
+%0100000000000000 double-operand mov.w
+%0100000001000000 double-operand mov.b
+%0101000000000000 double-operand add.w
+%0101000001000000 double-operand add.b
+%0110000000000000 double-operand addc.w
+%0110000001000000 double-operand addc.b
+%0111000000000000 double-operand subc.w
+%0111000001000000 double-operand subc.b
+%1000000000000000 double-operand sub.w
+%1000000001000000 double-operand sub.b
+%1001000000000000 double-operand cmp.w
+%1001000001000000 double-operand cmp.b
+%1010000000000000 double-operand dadd.w
+%1010000001000000 double-operand dadd.b
+%1011000000000000 double-operand bit.w
+%1011000001000000 double-operand bit.b
+%1100000000000000 double-operand bic.w
+%1100000001000000 double-operand bic.b
+%1101000000000000 double-operand bis.w
+%1101000001000000 double-operand bis.b
+%1110000000000000 double-operand xor.w
+%1110000001000000 double-operand xor.b
+%1111000000000000 double-operand and.w
+%1111000001000000 double-operand and.b
+
+: single-operand <builds , $30 setflags
+                 does> @ ( Opcode )
+
+                       operandenparser ( Opcode -- Opcode Daten Bitmaske )
+                       constantengenerator-r3
+                       dup $1000 and
+                       if \ Daten folgen aus dem ersten Operanden
+                         ( Opcode Daten Bitmaske )
+                         $003F and \ Maske für Quelloperanden
+                         ( Opcode Daten Bitmaske* )
+                         rot ( Daten Bitmaske* Opcode )
+                         or ( Daten Opcode* )
+                         , ,
+
+                       else \ Keine Daten folgen aus dem ersten Operanden
+                         ( Opcode Daten Bitmaske )
+                         nip \ Daten weg
+                         $003F and \ Maske für Quelloperanden
+                         or ( Opcode* )
+                         ,
+                       then
+; \ single-operand
+
+%0001000000000000 single-operand rrc.w
+%0001000001000000 single-operand rrc.b
+%0001000010000000 single-operand swpb.w
+%0001000100000000 single-operand rra.w
+%0001000101000000 single-operand rra.b
+%0001000110000000 single-operand sxt.w
+%0001001000000000 single-operand push.w
+%0001001001000000 single-operand push.b
+%0001001010000000 single-operand call.w
+
+
+\ Emulierte Befehle, die aber der Einfachheit halber trotzdem gesondert behandelt werden:
+\ Spezielle Nur-Ziel-Zwei-Operanden-Befehle
+
+: emu-destination-operand
+                 <builds , $30 setflags
+                 does> @ ( Opcode )
+                       ziel-operand if   ( Daten Opcode ) , ,
+                                    else ( Opcode )       ,
+                                    then
+;
+
+
+$6300 emu-destination-operand adc.w
+$6340 emu-destination-operand adc.b
+$7300 emu-destination-operand sbc.w
+$7340 emu-destination-operand sbc.b
+$4300 emu-destination-operand clr.w
+$4340 emu-destination-operand clr.b
+$8310 emu-destination-operand dec.w
+$8350 emu-destination-operand dec.b
+$8320 emu-destination-operand decd.w
+$8360 emu-destination-operand decd.b
+$5310 emu-destination-operand inc.w
+$5350 emu-destination-operand inc.b
+$5320 emu-destination-operand incd.w
+$5360 emu-destination-operand incd.b
+$e330 emu-destination-operand inv.w
+$e370 emu-destination-operand inv.b
+$9300 emu-destination-operand tst.w
+$9340 emu-destination-operand tst.b
+$4130 emu-destination-operand pop.w
+$4170 emu-destination-operand pop.b
+
+
+: emu-shift-operand
+                 <builds , $30 setflags
+                 does> @ ( Opcode )
+
+  \ Fälle: Register, Register indirekt (inkl. absoluter Adressierung) --> Zieloperand identisch
+  \        @Register --> Quelle und Ziel etwas anders, @Register+ --> @r10+, -2(r10) :-)
+  \        Alle Fälle mit Ausnahme von Konstanten sind erlaubt. Wozu aber auch Konstanten schieben ?
+
+
+                       operandenparser ( Opcode -- Opcode Daten Bitmaske )
+
+                       dup $1000 and
+                       if \ Daten folgen aus dem ersten Operanden
+                          \ In diesem Fall müssen die Operanden zweimal geschrieben werden.
+                          \ Indexed, Absolut.
+                         ( Opcode Daten Bitmaske )
+                         $0FBF and \ Maske für Quell- und Zieloperanden
+                         ( Opcode Daten Bitmaske* )
+                         rot ( Daten Bitmaske* Opcode )
+                         or ( Daten Opcode* )
+                         , dup , ,
+                       else \ Keine Daten folgen aus dem ersten Operanden, vielleicht aus dem zweiten.
+
+                         ( Opcode Daten Bitmaske )
+                         dup $0080 and if \ Daten für zweiten Operanden
+                                         \ Probe auf @rx+ im Bytebefehl !!
+                                        $0FBF and \ Maske für Quell- und Zieloperanden
+                                        ( Opcode Daten Bitmaske* )
+                                        rot ( Daten Bitmaske* Opcode )
+                                        or ( Daten Opcode* )
+                                        , ,
+
+                                      else \ Keine Daten für zweiten Operanden
+                                        nip ( Opcode Bitmaske )
+                                        $0FBF and \ Maske für Quell- und Zieloperanden
+                                        or ,
+                                      then
+                       then
+
+;
+
+$5000 emu-shift-operand rla.w
+$5040 emu-shift-operand rla.b
+$6000 emu-shift-operand rlc.w
+$6040 emu-shift-operand rlc.b
+
+\ Assembler hier zu Ende.
+\ End of Assembler
+
+
+compiletoram
+
+\ A small example for a five channel LED PWM timer tick routine
+
+$29 constant P2OUT
+
+8 variable led-pwm
+0 variable led-timer
+0 variable led-red
+0 variable led-yellow
+0 variable led-green
+0 variable led-blue
+0 variable led-uv
+
+: tick
+  push.w r10
+  mov.w &led-timer r10
+  inc.w r10
+
+  cmp.w &led-pwm r10
+  jlo +
+  clr.w r10
+l+:
+
+  cmp.w &led-red    r10  jlo +  bic.b #%1      &p2out  jmp ++  l+: bis.b #%1     &p2out   l+:
+  cmp.w &led-yellow r10  jlo +  bic.b #%10     &p2out  jmp ++  l+: bis.b #%10    &p2out   l+:
+  cmp.w &led-green  r10  jlo +  bic.b #%100    &p2out  jmp ++  l+: bis.b #%100   &p2out   l+:
+  cmp.w &led-blue   r10  jlo +  bic.b #%1000   &p2out  jmp ++  l+: bis.b #%1000  &p2out   l+:
+  cmp.w &led-uv     r10  jlo +  bic.b #%10000  &p2out  jmp ++  l+: bis.b #%10000 &p2out   l+:
+
+  mov.w r10 &led-timer
+  pop.w r10
+;
+

@@ -1,0 +1,1341 @@
+;
+;    Mecrisp - A native code Forth implementation for MSP430 microcontrollers
+;    Copyright (C) 2011  Matthias Koch
+;
+;    This program is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    This program is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;
+
+;------------------------------------------------------------------------------
+This is the third experimental release of an implementation of
+native code Forth for the MSP430 architecture.
+
+http://mecrisp.sourceforge.net/
+
+m-atthias@users.sf.net
+;------------------------------------------------------------------------------
+
+It is running on the following chips out of the box:
+
+  MSP430F2274 (9600 Baud, 8 MHz, TX on P3.4, RX on P3.5)
+  MSP430G2553 (9600 Baud, 8 MHz, TX on P1.2, RX on P1.1)
+
+  MSP430G2955 (9600 Baud, 8 MHz, TX on P3.4, RX on P3.5)
+  MSP430G2855 (9600 Baud, 8 MHz, TX on P3.4, RX on P3.5)
+  MSP430G2755 (9600 Baud, 8 MHz, TX on P3.4, RX on P3.5)
+
+  MSP430F5529  (115200 Baud, 8 MHz, TX on P4.4, RX on P4.5)
+  MSP430FR4133 (115200 Baud, 8 MHz, TX on P1.0, RX on P1.1)
+  MSP430FR5969 (115200 Baud, 8 MHz, TX on P2.0, TX on P2.1)
+
+  Special Mecrisp for MSP430F1612 with initialisations for Launchpad hardware
+  is included to conquer your Launchpad completely.
+
+
+It fits into 11 kb of Flash and runs with at least 512 Bytes of Ram.
+
+You can choose to compile to flash or to ram, and it generates native code 
+with folding, inlining of short words and it opcodes common instructions. 
+Note that it doesn't need to save any pointers, so info flash keeps untouched.
+
+Hopefully it should be completely interrupt-save and you can hook your Forth
+definitions to interrupt vectors. Of course, you should not hook create to a
+timer interrupt, unless you want all your memory to be filled with random
+creatures :-)
+
+Altough it is in spirit of ANS, there are some differences: Be careful !
+Have a glance over the glossary at the end of this file for details.
+
+;------------------------------------------------------------------------------
+
+For a quick start, burn the appropriate hex file into your chip.
+http://mspdebug.sourceforge.net/ is fine for flashing.
+
+If you have a G2553-Launchpad, look at the Launchpad section.
+
+Try to set up communication:
+It gives you a welcome message on reset and it's input routine echos back
+graphic characters until buffer full. It assumes Unicode utf-8 input.
+
+Start having fun with Mecrisp !
+
+;------------------------------------------------------------------------------
+
+The assembler source can be assembled with
+Alfred Arnolds *great* macro assembler AS,
+which source is included here to have everything in one place.
+Install it, if you like to dive into Mecrisp.
+
+Run the assemble bash skript or use this command for assembling:
+asl forth-mecrisp.asm && p2hex forth-mecrisp.p -r 0x0000-0xffff
+
+;------------------------------------------------------------------------------
+
+Included you will find my MSP430 CPU emulator Mecrimemu,
+if you want to try this out on your x86 linux box.
+
+Its Freepascal source is included under GPL too,
+but for now, it is a native german speaking tool.
+
+There are some bash scripts to easily invoke it:
+
+mecrisp                    Simply runs Forth
+mecrisp-definitions        Runs Forth and feeds in your definitions
+
+mecrisp-image-definitions  Runs Forth, makes a blank flash dictionary image
+                           and feeds definitions in
+mecrisp-image              Runs Forth with flash dictionary image in place
+
+mecrisp-memmap             Runs Forth, feeds in ramdefinitions.txt and
+                           shows disassembler listing for the
+                           executed parts in ram dictionary
+                           and a ram memory map.
+
+;------------------------------------------------------------------------------
+; Common and useful Forth basis definitions for MSP430G2553 in Launchpad
+;------------------------------------------------------------------------------
+
+I highly recommend Launchpad users new to Mecrisp
+to load basisdefinitions-launchpad.txt for a first try. 
+This one contains the definitions for a cosy launch:
+
+-Port definitions
+-Hardware initialisations
+-PWM on green led
+-Random numbers
+-Temperature and Vcc measurement
+-Simple busy wait routines
+-Cornerstone to delete parts of flash and an hexdump tool
+
+Put the output of hexdump at the beginning of the vanilla 
+forth-mecrisp-2553.hex file to generate a new hex file that includes your 
+dictionary contents and can be used to clone finished forth projects !
+
+Try:
+
+: ?button   ( -- Flag ) 8 p1in cbit@ not ;
+: led-red   ( Flag -- ) if  1 p1out cbis! else  1 p1out cbic! then ;
+: led-green ( Flag -- ) if 64 p1out cbis! else 64 p1out cbic! then ;
+
+?button led-red
+
+1024 pwm-init
+1 pwm
+10 pwm
+200 pwm
+500 pwm
+1000 pwm 
+
+For terminal communication in Linux, picocom is just nice.
+http://code.google.com/p/picocom/
+
+Invocation:
+picocom -b 9600 /dev/ttyACM0 --imap lfcrlf,crcrlf --omap delbs,crlf 
+        --send-cmd "ascii-xfr -s -l 250 -n"
+
+Type Ctrl-A and Ctrl-X to exit Picocom, 
+     Ctrl-A and Ctrl-S to load Forth source files.
+
+Don't forget to set the RXD/TXD UART jumpers to "HW UART" position.
+
+As a small bonus, there is a Ledcomm in Forth implementation in 
+ledcomm-launchpad.txt that runs on your Launchpad with
+a red high brightness LED in clear plastic housing.
+For algorithm description, see ledcomm.txt.
+
+;------------------------------------------------------------------------------
+; Special Mecrisp for MSP430F1612 with initialisations for Launchpad hardware
+;------------------------------------------------------------------------------
+
+If you have a 4 wire JTAG adapter 
+and a spare (or bricked) launchpad, this is your item !
+
+Don't forget to read and save a copy of the original launchpad 1612 firmware
+first if you want to go back !!
+
+JTAG signals of MSP430F1612 are accessible as nicely spaced test pins.
+
+TP2: Reset
+TP4: TCK
+TP5: TMS
+TP6: TDI
+TP7: TDO 
+
+Mecrisp for F1612 has special hardware initialisations to activate the TUSB3410
+without the USB-Firmware in I2C-EEprom. This way, the TUSB3410 boots over USB 
+and gets a standard firmware image from PC which configures it as a simple 
+serial bridge. Set the serial interface to 9600 baud, 8N1 - and feel free to 
+write your own open firmware for the Launchpad.
+
+Unfortunately, only a few pins are accessible... 
+
+P5.3 is on TEST jumper
+P5.1, P5.2, P4.6, P2.4 seem to be all together on RESET jumper
+P3.6 and P3.7 are on the TXD and RXD jumpers.
+
+Others are occupied by launchpad hardware:
+
+P5.5 supplies SMCLK as clock for the TUSB3410
+P4.6 Reset line of TUSB3410
+P3.1 SDA and P3.3 SCL are both tied low to deactivate I2C boot of TUSB3410
+P3.4 and P3.5 are USART0 pins that communicate with the host.
+
+As there are no accessible analog pins, no analog support is included.
+
+Terminal is almost the same - just change the above to /dev/ttyUSB0.
+Copy ti_3410.fw to /lib/firmware if needed.
+
+Good luck ! 
+
+;------------------------------------------------------------------------------
+Inner workings and design ideas behind Mecrisp
+;------------------------------------------------------------------------------
+
+The following examples in this file are just fine for RF2500 tool,
+which has a red LED between P1.0 and GND,
+        a green LED between P1.1 and GND,
+             a knob between P1.2 and GND.
+
+As everything is set up to directly write to flash, you always have to use the
+FIG-fashioned <builds does> mechanism instead of create does>.
+Builds reserves space for the call-Opcode which otherwise could not be written.
+
+Create in itself only compiles a header structure and does linking, but as
+this is a native code approach, the newly defined word wouldn't do anything
+usefull.
+
+It has a handfull of flags, immediate, inline, folding, ram-allocating,
+opcoding and if the flagbyte is unset, $FF, then the word is invisible.
+Find gives back address of Word and Flags, but Flag 0 means
+"normal visible word without anything special."
+
+If unsuccessful, find will return a zero for address, check for that !
+
+Here is a map of flag meanings:
+
+;   FF  Invisible
+;
+;   00  Visible
+;   10  Immediate
+;   20  Inline - that means, it's contents will be inlined
+;                until $4130, the ret opcode is found.
+;   30  Immediate+Inline means: Immediate, Compile-Only
+;   40  Foldable or ready for opcoding
+;   80  Allocates initialized Ram (automatically zero-foldable).
+;       Low Nibble notes how many cells (16-Bit-Values) are reserved.
+;       For example flag 82 reserves 4 Bytes.
+;       Reserved Ram is initialized to the values
+;       after the ret opcode of the word.
+;
+;   In detail:
+;     Foldable or opcodeable
+;     40  0-foldable, e.g. constants
+;     41  1-foldable, e.g. 1+
+;     42  2-foldable, e.g. swap, xor
+;     .   ...
+;     47  7-foldable
+;
+;     "48" is base for opcodable
+;     49  opcodable two operand calculus or logic, all are
+;          automatically 2 foldable (often in combination mit inline: $69)
+;     4A  opcodable write memory
+;     4B  opcodable read  memory
+;     4C  opcodable special
+;
+
+All string routines give and expect adresses of counted strings.
+No one takes the character count on the stack !
+
+You will find a FIG-looking design of the interpreter/compiler,
+with query, interpret and number, but it's neither FIG nor ANS.
+
+Internally, quit clears both stacks and loops "query interpret".
+
+Query fetches input with key and emit, and stores it into the input buffer,
+from where token and parse get their data. Query assumes utf-8 input
+
+Interpret is complicated and performs all optimisations like folding
+and opcoding. For details you can look in the source, which is heavily
+documented, but for now only in German.
+
+I like lowercase most, so everything is lowercase in this implemtation,
+but as it is case-insensitive, it won't matter. Of course, it is
+only case-insensitive for standard ASCII letters, not for chars defined
+in utf-8, like German umlauts ä, ö and ü.
+
+You can switch off UTF-8 support in source, and use it with strict
+one-byte-per-character encodings. This affects only query, when
+you delete entered characters with backspace.
+
+Comments are not defined,
+define your favourite comment with:
+
+: ( [char] ) parse drop immediate ;  ( Comment )
+or
+: { [char] } parse drop immediate ;  { Comment }
+
+Just to your taste !
+
+Do you mention the strange use of immediate inside of the definition ?
+Immediate is itself immediate, as inline is too.
+
+If you compile to flash, you have to set up flags before using ;
+which in turn calls smudge. Smudge takes all the flags out of a variable in Ram
+and finally burns them into flash. In Ram, they also work the usual way.
+This is needed for invisibility of freshly defined words,
+and the MSP430 flash specs state that you must not write a 16-bit-flash value
+more than twice. As I need the other write access for name length byte, and as
+this implementation has a lot of flags that can coexist, I choosed this way.
+
+If you like to make your definitions foldable, consider this:
+: 5+ 5 +  1-foldable ;
+Makes your shortcut foldable, if there is at least one constant number waiting.
+: 11more 6 5+ + ;
+With folding activated for 5+, this will internally optimize to : 11more 11 + ;
+
+11 + internally gets opcoded to add #11, @r4...
+
+This would be the setting for maximal optimisation:
+: 5+ 5 +  1-foldable ;
+: 11more 6 5+ +  1-foldable ;
+
+Constants are automatically activated for folding, so if you write:
+
+$20 constant P1IN
+$21 constant P1OUT
+$22 constant P1DIR
+$27 constant P1REN
+
+ %1 constant led_red
+%10 constant led_green
+
+: led-init led_green led_red or P1DIR c! ;
+
+it will get folded to : led-init 3 $22 c! ;
+
+As c! is opcodable, the opcode for mov.b #3, &022h is written to the dictionary,
+where it consumes 6 bytes.
+
+Normal calls take up 4 Bytes,
+literals take up a maximum of 8 Bytes (sic!),
+inlined core words take 2 to 4 bytes.
+
+Special constructs like does> need more.
+
+Do you have an idea how to size-efficiently push a number to data stack ?
+I use:
+  sub #2, r4           (2 Bytes)
+  mov #Constant, 0(r4) (6 Bytes)
+
+I experimented with the sequence call r9 (2 Bytes) Constant (2 Bytes)
+with a special literal-fetcher-routine which address is always in r9,
+but this eats a lot of clock cycles.
+
+Ideas are very welcome ! Did you ever mention that call @sp+ crashes the CPU ?
+
+Variable takes an initialisation value, just like FIG-Forth.
+
+In Ram, it is simply written to the variable cell, which is just
+within the dictionary.
+
+In Flash, it decreases a variable-pointer that initially
+points to the end of the ram-dictionary, compiles a word
+that gives back that address in ram, appends the initialization value
+to the flash dictionary and places it in the reserved ram cell.
+
+On each reset of the chip, the dictionary is internally searched for
+ram-allocating words, the variable-pointer is updated with every occurrence
+and the initialization values are copied from their place after the
+ret-opcode of that word to their variable location in ram.
+
+If you define a word with name "init" - its latest definition is called every
+startup ! You you can redefine init if you like to add e.g. additional hardware
+setup; don't forget to give your old definition of init a call,
+if you have one.
+
+You can write flash with flash! and cflash! - they ensure that flash specs
+are regarded, so they won't destroy your flash hardware. They write only
+if FF/FFFF is in that place and the requested value is other that FF/FFFF.
+They also refuse to write into forth kernel.
+
+Call eraseflash if you want to wipe out everything. Info Flash keeps untouched.
+
+You can switch between compiling to ram and compiling to flash with the words
+"compiletoram" and "compiletoflash".
+
+Allot will warn you if you run out of memory. Compiletoram alerts you if
+flash-variable-space-in-ram collides with the ram-dictionary.
+Keep in mind that ram-definitions are blanked out and invisible during
+working in flash. I thought that would be a good idea,
+as ram is gone with next reset and your flash-based definitions would jump
+right in the middle of nowhere... No fear, Ram-Dictionary is back by typing
+compiletoram, if you haven't overwritten ram-definitions with freshly defined
+flash-variables. You get a notice if that happens.
+
+Note that definitions in flash are "backlinked", they point
+to the next definition or to FFFF. This way it is possible
+to determine the pointers back on reset without the need for rewriteable
+storage. This has the side effect that you cannot forget.
+I advice you to simply redefine if you have enough flash space left.
+
+In Ram, there is normal search order.
+In Flash, determined by a simple comparision on the address "here",
+the search starts deeply into the core and proceeds into the user-filled
+flash dictionary until the link is FFFF or points to a location where FFFF
+is found. The latest found entry with the choosen name is taken.
+
+The very last entry in core dictionary always points to
+flash-dictionary-start. My implementation of "words" gives you insight
+about flags, places and links, if you are curious.
+
+The DictionaryPointer is regained by looking back from end-of-flash-dictionary
+until there is a location that not equals FFFF. Note that if a definition ends
+with e.g. a constant or data FFFF and you reset your chip, this is overwritten
+by the next defined word. Smudge takes care of that and appends a 0 at the end,
+if necessary. Keep it in mind, if you decide to smudge a word and append data
+later.
+
+It should be quite easy to port this to other chips,
+Simply change your memory needs in the main file and include
+your favourite terminal routines. Instructions for porting to other chips of
+the MSP430 family are included in English source. Note that there is
+no support for the CPUX address extension in core.
+
+If you like to change the 8MHz clock frequency, don't forget to change UART
+initialisation and the flash clock divider to an allowed range too !
+
+If you know the cpu architecture a bit, you surely know the nice feature
+that it can do logic operations on memory (port) locations. This is handy
+and it saves a lots of space, so I included those optimising shortcuts for you:
+
+cbit@  ( mask address -- flag )
+bit@   ( mask address -- flag )
+
+cxor!  ( mask address -- )
+xor!   ...
+cbic!
+bic!
+cbis!
+bis!
+
+The "c" denotes byte access.
+
+xor toggles bits in that location, as you remember the example above:
+
+: blink led_green P1OUT cxor! ;
+
+will toggle the state of the green light.
+
+bic is "BIt Clear" - and means "not and" to a memory cell.
+
+: darkness led_red led_green or P1OUT cbic! ;
+
+bis means "BIt Set" and does a logic or.
+: green-light led_green P1OUT cbis! ;
+
+bit@ is "BIt Test" - it checks if at least one of
+the bits in your masks are set in the chosen location.
+
+If you prepared your knob with pull-up resistor,
+
+%100 constant knob
+knob P1DIR cbic!
+knob P1REN cbis!
+knob P1OUT cbis!
+
+you can fetch its state with
+: ?knob knob P1IN cbit@ ;
+
+Opcodable words are thighty connected to the inner structure of interpret.
+Look there first, before flagging new words as opcodeable
+unless you really want chaos.
+
+Analog is a simply way to fetch an reading of the hardware 10 bit
+analog-digital-converter, slow single shot, with 2,5V internal reference.
+Don't forget to do analog enables for your pins in ADC10AE0 register !
+
+analog ( u-channel -- u-reading )
+
+A simple example is the internal temperature sensor, read it with
+: temperature 10 analog ;
+
+: voltage 11 analog ;
+gives you an idea of the voltage the chip is currently running on.
+
+The ADC result is defined as:
+N_adc = 1023 * (U_in - U_ref-) / (U_ref+ - U_ref-)
+
+With positive reference set to 2,5V and negative reference to GND it becomes
+N_adc = 1023 * U_in / 2,5V
+
+For internal Vcc voltage measurement,
+U_in is halfed by a voltage divider in hardware.
+One example: Vcc of 3,3V should give a reading in channel 11 of
+about 1023 * (3,3V/2) / 2,5V = 676.
+
+: vcc. ."  Vcc is " 0  11 analog  204,6 f/ f. ." V " ;
+
+What is your favourite single-shot ADC10 setup ?
+Which one could serve the many best ?
+
+Interrupt hooks are variables for execution tokens.
+They are intitialized to "nop", and can be set with
+
+' blink irq-hook-watchdog !
+
+Enable global interrupts with eint, enable your irq source -
+and have fun. Unset a IRQ-hooks can be done with
+
+' nop irq-hook-watchdog !
+
+but keep in mind that some interrupt sources request that you take care
+of IRQ-flags, failing to reset them will cause that hook to be looped endlessy.
+
+I should be possible to change IRQ handlers on the fly without diabling
+the source first.
+
+Here is a working example:
+It will toggle the green led on P1.1 if you press the button that is
+connected between P1.2 and GND.
+
+( Do you have your favourite port constants already in flash ?)
+
+compiletoflash
+
+$20 constant P1IN
+$21 constant P1OUT
+$22 constant P1DIR
+$23 constant P1IFG
+$24 constant P1IES
+$25 constant P1IE
+$26 constant P1SEL
+$27 constant P1REN
+
+compiletoram
+
+7 p1out c!  ( High )
+3 p1dir c!  ( Set LEDs as outputs )
+4 p1ren c!  ( Activate Pull-Up )
+: toggle 2 p1out cxor! 0 p1ifg c! ;  ( Toggle green LED and reset IRQ flag )
+' toggle irq-port1 !                 ( Insert IRQ hook )
+eint        ( Global IRQ enable )
+4 p1ie c!   ( Enable IRQ for P1.2 )
+
+How would you like to have low-power-modes implemented ?
+
+Number has special features:
+
+number ( Counted-String-Address -- 0 )
+                                -- n 1 )
+                                -- n-low n-high 2 )
+
+I will start at the beginning:
+
+A leading $ will temporarily change base to hex,
+a leading % to binary,
+a leading # to decimal.
+
+Hopefully it is usefull with lots of port adresses and bit masks
+intermixed with normal literals !
+
+Normal numbers as "42" "%10110" "$-a0" or "-113" are converted to one-cell-numbers.
+Numbers equipped with a dot are converted to double-length-numbers.
+
+And numbers geared with a comma as "3,14159" or "$3,243F"
+are converted to s15.16 fixed-point-numbers. They can be printed with f.
+For your own beautiful fixed-point output, I give you these tools:
+
+hold<  ( char -- )  Adds a char to the number buffer from behind
+f#     ( n -- n )   Processes one after-comma-digit
+f#s    ( n -- n )   Processes 16 after-comma-digits.
+
+Look at this example:
+
+: f.3 ( ncomma nwhole )
+      tuck     ( nwhole ncomma nwhole )
+      dabs     ( nwhole ucomma uwhole )
+      0        ( nwhole ucomma uwhole 0 )
+      <# #s    ( nwhole ucomma 0 0 )
+
+      [char] , hold<
+      rot      ( nwhole 0 0 ucomma )
+      f# f# f# ( nwhole 0 0 ucomma )
+      drop     ( nwhole 0 0 )
+
+      rot      ( 0 0 nwhole )
+      sign     ( 0 0 )
+
+      #> type space ;
+
+3,14159 2,0 f* f.3 6,283  ok.
+
+It gives you three digits after the comma.
+
+The other uses of the number formating utilities are as normal:
+: ud. <# #s #> type space ;
+: d. tuck dabs <# #s rot sign #> type space ;
+They are internally implemented this way.
+
+For fixpoint-numbers you can use d+ and d- as usual,
+and do division and multiplication with f/ and f*.
+
+For speed reasons, there are two sets of multiplication and division:
+u/mod is a 16 / 16 = 16 mod 16 division
+m*    is a 16 * 16 = 32 multiplication.
+All the single calculations are based on those.
+
+ud/mod is a 32/32 = 32 mod 32 division with
+md* 32*32=64 bit multiplication on its side.
+The double number calculations, the fixed-point calculations
+and */mod with its double intermediate result are based on that.
+
+Signed division is symmetric in this implementation.
+For now, there is no support for hardware multiply, if you implement it,
+take care of interrupts while number crunching !
+
+All stack jugglers, logic, calculus, and control structures are ANS compatible.
+Pictured numerical output works like ANS,
+but #> gives adress of counted string, you know :-)
+
+Besides the inner workings of the interpreter and compiler,
+the CPU specific parts and some extensions,
+I hope you will feel comfortable !
+
+;------------------------------------------------------------------------------
+Here comes a word list,                                          -- Glossary --
+  with short descriptions of all currently included words:
+View it with fixed-width font !
+;------------------------------------------------------------------------------
+
+;------------------------------------------------------------------------------
+; Terminal-IO  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        emit?           ( -- Flag ) Ready to send a character ?
+        key?            ( -- Flag ) Checks if a key is waiting
+        key             ( -- Char ) Waits for and fetches the pressed key
+        emit            ( Char -- ) Emits a character.
+
+        hook-emit?      ( -- a-addr ) Hooks for redirecting
+        hook-key?       ( -- a-addr )   terminal IO
+        hook-key        ( -- a-addr )     on the fly
+        hook-emit       ( -- a-addr ) 
+
+        serial-emit?    ( -- Flag )  Serial interface
+        serial-key?     ( -- Flag )    terminal routines
+        serial-key      ( -- Char )      as default communications
+        serial-emit     ( Char -- ) 
+
+        hook-pause      ( -- a-addr ) Hook for a multitasker
+        pause           ( -- )        Task switch, none for default
+
+;------------------------------------------------------------------------------
+; Stack Jugglers  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+Single-Jugglers:
+
+        depth           ( -- +n ) Gives number of single-cell stack items.
+        nip             ( x1 x2 -- x2 )
+        drop            ( x -- )
+        rot             ( x1 x2 x3 -- x2 x3 x1 )
+        -rot            ( x1 x2 x3 -- x3 x1 x2 )
+        swap            ( x1 x2 -- x2 x1 )
+        tuck            ( x1 x2 -- x2 x1 x2 )
+        over            ( x1 x2 -- x1 x2 x1 )
+        ?dup            ( x -- 0 | x x )
+        dup             ( x -- x x )
+        pick            ( ... xi+1 xi ... x1 x0 i -- ... x1 x0 xi )
+                                  Picks one element from deep below
+
+        >r              ( x -- ) (R: -- x )
+        r>              ( -- x ) (R: x -- )
+        r@              ( -- x ) (R: x -- x )
+        rdrop           (  --  ) (R: x -- )
+        rdepth          ( -- +n ) Gives number of return stack items.
+        rpick           ( i -- xi ) R: ( ... xi ... x0 -- ... xi ... x0 )
+
+Double-Jugglers:        They perform the same for double numbers.
+
+        2nip            ( x1 x2 x3 x4 -- x3 x4 )
+        2drop           ( x1 x2 -- )
+        2rot            ( x1 x2 x3 x4 x5 x6 -- x3 x4 x5 x6 x1 x2 )
+        2-rot           ( x1 x2 x3 x4 x5 x6 -- x5 x6 x1 x2 x3 x4 )
+        2swap           ( x1 x2 x3 x4 -- x3 x4 x1 x2 )
+        2tuck           ( x1 x2 x3 x4 -- x3 x4 x1 x2 x3 x4 )
+        2over           ( x1 x2 x3 x4 -- x1 x2 x3 x4 x1 x2 )
+        2dup            ( x1 x2 -- x1 x2 x1 x2 )
+
+        2>r             ( x1 x2 -- ) (R: -- x1 x2 )
+        2r>             ( -- x1 x2 ) (R: x1 x2 -- )
+        2r@             ( -- x1 x2 ) (R: x1 x2 -- x1 x2 )
+        2rdrop          ( -- )       (R: x1 x2 -- )
+
+Stack pointers:
+
+        sp@             ( -- a-addr )  Fetch  data stack pointer
+        sp!             ( a-addr -- )  Store  data stack pointer
+        rp@             ( -- a-addr )  Fetch return stack pointer
+        rp!             ( a-addr -- )  Store return stack pointer
+
+;------------------------------------------------------------------------------
+; Logic  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        arshift         ( x1 u -- x2 ) Arithmetric right-shift of u bit-places
+        rshift          ( x1 u -- x2 ) Logical right-shift of u bit-places
+        lshift          ( x1 u -- x2 ) Logical  left-shift of u bit-places
+        shr             ( x1 -- x2 )   Logical right-shift of one bit-place
+        shl             ( x1 -- x2 )   Logical  left-shift of one bit-place
+        ror             ( x1 -- x2 )   Logical right-rotation of one bit-place
+        rol             ( x1 -- x2 )   Logical  left-rotation of one bit-place
+        bic             ( x1 x2 -- x3 ) Bit clear, identical to "not and"
+        not             ( x1 -- x2 )   Invert all bits
+        xor             ( x1 x2 -- x3 ) Bitwise Exclusive-OR
+        or              ( x1 x2 -- x3 ) Bitwise OR
+        and             ( x1 x2 -- x3 ) Bitwise AND
+        false           ( --  0 ) False-Flag
+        true            ( -- -1 ) True-Flag
+        clz             ( x1 -- u ) Count leading zeros
+        ><              ( xy -- yx )   Swap bytes
+
+;------------------------------------------------------------------------------
+; Calculus for single numbers  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        u/mod           ( u1 u2 -- u3 u4 ) 16/16 = 16 rem 16 Division
+                                           u1 / u2 = u4 remainder u3
+        /mod            ( n1 n2 -- n3 n4 ) n1 / n2 = n4 rem n3
+        mod             ( n1 n2 -- n3 ) n1 / n2 = remainder n3
+        /               ( n1 n2 -- n3 ) n1 / n2 = n3
+        *               ( u1|n1 u2|n2 -- u3|n3 ) 16*16 = 16 Multiplication
+        min             ( n1 n2 -- n1|n2 ) Keeps smaller of top two items
+        max             ( n1 n2 -- n1|n2 ) Keeps greater of top two items
+        umin            ( u1 u2 -- u1|u2 ) Keeps unsigned smaller
+        umax            ( u1 u2 -- u1|u2 ) Keeps unsigned greater
+        2-              ( u1|n1 -- u2|n2 ) Subtracts two, optimized
+        1-              ( u1|n1 -- u2|n2 ) Subtracts one, optimized
+        2+              ( u1|n1 -- u2|n2 ) Adds two, optimized
+        1+              ( u1|n1 -- u2|n2 ) Adds one, optimized
+        even            ( u1|n1 -- u2|n2 ) Makes even. Adds one if uneven.
+        2*              ( n1 -- n2 ) Arithmetric  left-shift
+        2/              ( n1 -- n2 ) Arithmetric right-shift
+        abs             ( n -- u ) Absolute value
+        negate          ( n1 -- n2 ) Negate
+        -               ( u1|n1 u2|n2 -- u3|n3 ) Subtraction
+        +               ( u1|n1 u2|n2 -- u3|n3 ) Addition
+
+;------------------------------------------------------------------------------
+; Calculus involving double numbers  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        um*             ( u1 u2 -- ud )  16*16 = 32 Multiplication
+        udm*            ( ud1 ud2 -- ud3-Low ud4-High ) 32*32=64 Multiplication
+
+        um/mod          ( ud u1 -- u2 u3 )     ud / u1 = u3 remainder u2
+        ud/mod          ( ud1 ud2 -- ud3 ud4 ) 32/32 = 32 rem 32 Division
+                                               ud1 / ud2 = ud4 remainder ud3
+
+        m*              ( n1 n2 -- d )         n1 * n2 = d
+        m/mod           ( d n1 -- n2 n3 )      d / n1 = n3 remainder r2
+
+        */              ( n1 n2 n3 -- n4 )     n1 * n2 / n3 = n4
+        u*/             ( u1 u2 u3 -- u4 )     u1 * u2 / u3 = u4
+        */mod           ( n1 n2 n3 -- n4 n5 )  n1 * n2 / n3 = n5 remainder n4
+
+        d2*             ( d1 -- d2 ) Arithmetric  left-shift
+        d2/             ( d1 -- d2 ) Arithmetric right-shift
+        dshl            ( ud1 -- ud2 ) Logical left-shift, same as d2*
+        dshr            ( ud1 -- ud2 ) Logical right-shift
+
+        dabs            ( d -- ud ) Absolute value
+        dnegate         ( d1 -- d2 ) Negate
+        d-              ( ud1|d1 ud2|d2 -- ud3|d3 ) Subtraction
+        d+              ( ud1|d1 ud2|d2 -- ud3|d3 ) Addition
+        s>d             ( n -- d ) Makes a signed single number double length
+
+;------------------------------------------------------------------------------
+; Comparisions  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+Single-Comparisions:
+        u<=             ( u1 u2 -- flag )  Unsigned comparisions
+        u>=             ( u1 u2 -- flag )
+        u>              ( u1 u2 -- flag )
+        u<              ( u1 u2 -- flag )
+        <=              ( n1 n2 -- flag )    Signed comparisions
+        >=              ( n1 n2 -- flag )
+        >               ( n1 n2 -- flag )
+        <               ( n1 n2 -- flag )
+        0<              ( n - flag )         Negative ?
+        0<>             ( x -- flag )
+        0=              ( x -- flag )
+        <>              ( x1 x2 -- flag )
+        =               ( x1 x2 -- flag )
+
+Double-Comparisions:            They perform the same for double numbers.
+        du>             ( ud1 ud2 -- flag )
+        du<             ( ud1 ud2 -- flag )
+        d>              ( d1 d2 -- flag )
+        d<              ( d1 d2 -- flag )
+        d0<             ( d -- flag )
+        d0=             ( d -- flag )
+        d<>             ( d1 d2 -- flag )
+        d=              ( d1 d2 -- flag )
+
+;------------------------------------------------------------------------------
+; Tools (not only) for s15.16 fixed point numbers  (speciality!)
+;------------------------------------------------------------------------------
+
+Fixpoint numbers are stored ( n-comma n-whole ) and can be handled
+like signed double numbers.
+
+        f/              ( df1 df2 -- df3 ) Division of two fixpoint numbers
+        f*              ( df1 df2 -- df3 ) Multiplication
+
+        hold<           ( char -- )
+                        Adds character to pictured number output buffer
+                        from behind.
+        f#S             ( n-comma1 -- n-comma2 )
+                        Adds 16 comma-digits to number output
+        f#              ( n-comma1 -- n-comma2 )
+                        Adds one comma-digit to number output
+        f.              ( df -- )
+                        Prints a fixpoint number with 16 fractional digits
+        f.n             ( df n -- )
+                        Prints a fixpoint number with n fractional digits
+
+        number          ( Counted-String-Address -- 0 )
+                          cstr-addr              -- n 1 )
+                                                 -- n-low n-high 2 )
+                        Tries to convert a string to a number.
+
+;------------------------------------------------------------------------------
+; Number base  (exactly ANS)
+;------------------------------------------------------------------------------
+
+        binary          ( -- ) Sets base to 2
+        decimal         ( -- ) Sets base to 10
+        hex             ( -- ) Sets base to 16
+        base            ( -- a-addr ) Base variable address
+
+;------------------------------------------------------------------------------
+; Memory access  (subtle differences to ANS, special cpu-specific extensions)
+;------------------------------------------------------------------------------
+
+        move            ( c-addr1 c-addr2 u -- ) Moves u Bytes in Memory
+        fill            ( c-addr u c ) Fill u Bytes of Memory with value c
+
+        cbit@           ( mask c-addr -- flag ) Test BIts in byte-location
+        bit@            ( mask a-addr -- flag ) Test BIts in word-location
+
+        cxor!           ( mask c-addr -- ) Toggle bits in byte-location
+        xor!            ( mask a-addr -- ) Toggle bits in word-location
+
+        cbic!           ( mask c-addr -- ) Clear BIts in byte-location
+        bic!            ( mask a-addr -- ) Clear BIts in word-location
+
+        cbis!           ( mask c-addr -- ) Set BIts in byte-location
+        bis!            ( mask a-addr -- ) Set BIts in word-location
+
+        2constant name  ( ud|d -- ) Makes a double constant.
+        constant  name  ( u|n -- )  Makes a single constant.
+        2variable name  ( ud|d -- ) Makes an initialized double variable
+        variable  name  ( n|n -- )  Makes an initialized single variable
+        nvariable name  ( n1*u|n n1 -- ) Makes an initialized variable with
+                                         specified size of n1 words
+                                         Maximum is 15 words
+
+        buffer: name    ( u -- ) Creates a buffer in RAM with u bytes length
+
+        2@              ( a-addr -- ud|d ) Fetches double number from memory
+        2!              ( ud|d a-addr -- ) Stores double number in memory
+
+        @               ( a-addr -- u|n ) Fetches single number from memory
+        !               ( u|n a-addr -- ) Stores single number in memory
+        +!              ( u|n a-addr -- ) Add to memory location
+
+        c@              ( c-addr -- char ) Fetches byte from memory
+        c!              ( char c-addr ) Stores byte in memory
+        c+!             ( u|n a-addr -- ) Add to byte memory location
+
+;------------------------------------------------------------------------------
+; Strings and beautiful output (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+String routines:
+
+        type            ( c-addr length -- )
+                        Prints a counted string.
+
+        s" Hello"       Compiles a string and
+                        ( -- c-addr length )
+                        gives back its address and length when executed.
+
+        ." Hello"       Compiles a string and
+                        ( -- )
+                        prints it when executed.
+
+        cr              ( -- ) Emits line feed
+        bl              ( -- 32 ) ASCII code for Space
+        space           ( -- ) Emits space
+        spaces          ( n -- ) Emits n spaces if n is positive
+
+        compare         ( caddr-1 len-1 c-addr-2 len-2 -- flag )
+                        Compares two strings
+
+        accept          ( c-addr maxlength -- length ) Read input into a string.
+
+Counted string routines:
+
+        ctype           ( cstr-addr -- )
+                        Prints a counted string.
+
+        c" Hello"       Compiles a counted string and
+                        ( -- cstr-addr )
+                        gives back its address when executed.
+
+        cexpect         ( cstr-addr maxlength -- ) Read input into a counted string.
+
+        count           ( cstr-addr -- c-addr length )
+                        Convert counted string into addr-length string
+
+        skipstring      ( cstr-addr -- a-addr )
+                        Increases the pointer to the aligned end of the string.
+
+Pictured numerical output:
+
+        .digit          ( u -- char ) Converts a digit to a char
+        digit           ( char -- u ) Converts a char to a digit
+
+        [char] *        Compiles code of following char
+                        ( -- char ) when executed
+
+        char *          ( -- char ) gives code of following char
+        hold            ( char -- ) Adds character to pictured number
+                                    output buffer from the front.
+
+        sign            ( n -- ) Add a minus sign to pictured number
+                                 output buffer, if n is negative
+
+        #S              ( ud1|d1 -- 0 0 ) Add all remaining digits
+                        from the double length number to output buffer
+        #               ( ud1|d1 -- ud2|d2 ) Add one digit from the
+                        double length number to output buffer
+        #>              ( ud|d -- c-addr len )
+                        Drops double-length number and finishes
+                        pictured numeric output ready for type
+        <#              ( -- ) Prepare pictured number output buffer
+        u.              ( u -- ) Print unsigned single number
+        .               ( n -- ) Print single number
+        ud.             ( ud -- ) Print unsigned double number
+        d.              ( d -- ) Print double number
+
+Deep insights:
+
+        words           ( -- ) Prints list of defined words.
+        .rs             ( R: many -- many ) Prints return stack contents
+        .s              ( many -- many ) Prints stack contents, signed
+        u.s             ( many -- many ) Prints stack contents, unsigned
+        h.s             ( many -- many ) Prints stack contents, unsigned, hex
+        hex.            ( u -- ) Prints 16 bit unsigned in hex base,
+                                 needs emit only.
+                                 This is independent of number subsystem.
+
+;------------------------------------------------------------------------------
+; User input and its interpretation (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        query           ( -- ) Fetches user input to input buffer
+        tib             ( -- cstr-addr ) Input buffer
+
+        current-source  ( -- addr ) Double-Variable which contains source
+        setsource       ( c-addr len -- ) Change source
+        source          ( -- c-addr len ) Current source
+        >in             ( -- addr ) Variable with current offset into source
+
+        token           ( -- c-addr len ) Cuts one token out of input buffer
+        parse           ( char -- c-addr len )
+                        Cuts anything delimited by char out of input buffer
+
+        evaluate        ( any addr len -- any ) Interpret given string
+        interpret       ( any -- any ) Execute, compile, fold, optimize...
+        quit            ( many -- ) (R: many -- ) Resets Stacks
+        hook-quit       ( -- a-addr ) Hook for changing the inner quit loop
+
+;------------------------------------------------------------------------------
+; Dictionary expansion  (exactly ANS, some logical extensions)
+;------------------------------------------------------------------------------
+
+        align           ( -- ) Aligns dictionary pointer
+        aligned         ( c-addr -- a-addr ) Advances to next aligned address
+        cell+           ( x -- x+4 ) Add size of one cell
+        cells           ( n -- 4*n ) Calculate size of n cells
+
+        allot           ( n -- ) Tries to advance Dictionary Pointer by n bytes
+                                 Aborts, if not enough space available
+        here            ( -- a-addr|c-addr )
+                        Gives current position in Dictionary
+
+        ,               ( u|n -- ) Appends a single number to dictionary
+        c,              ( char -- ) Appends a byte to dictionary
+
+        compiletoram?   ( -- ? ) Currently compiling into ram ?
+        compiletoram    ( -- ) Makes ram   the target for compiling
+        compiletoflash  ( -- ) Makes flash the target for compiling
+
+;------------------------------------------------------------------------------
+; Dictionary expansion  (speciality!)
+;------------------------------------------------------------------------------
+
+        string,         ( c-addr len -- ) Inserts a string of maximum 255 characters without runtime
+        literal,        ( u|n -- ) Compiles a literal with runtime
+        2literal,       ( ud|d -- ) Compiles a double literal with runtime
+        inline,         ( a-addr -- ) Inlines the choosen subroutine
+        call,           ( a-addr -- ) Compiles a call to a subroutine
+        jump,           ( Hole-for-Opcode Destination Bitmask ) Writes a Jump
+                        to a-addr-Destination with the given Bitmask as
+                        Opcode into the cell sized a-addr-Hole
+        ret,            ( -- ) Compiles a ret opcode
+
+        flashvar-here   ( -- a-addr ) Gives current RAM management pointer
+        dictionarystart ( -- a-addr ) Current entry point for dictionary search
+        dictionarynext  ( a-addr -- a-addr flag ) 
+                        Scans dictionary chain and returns true if end is reached.
+
+;------------------------------------------------------------------------------
+; Flags and inventory  (speciality!)
+;------------------------------------------------------------------------------
+
+        smudge          ( -- ) Makes current definition visible, burns
+                               collected flags to flash and
+                               takes care of proper ending
+        inline          ( -- ) Makes current definition inlineable.
+                               For flash, place it inside your definition !
+        immediate       ( -- ) Makes current definition immediate.
+                               For flash, place it inside your definition !
+        compileonly     ( -- ) Makes current definition compileonly.
+                               For flash, place it inside your definition !
+        setflags        ( char -- ) Sets Flags with a mask. This isn't immediate,
+                               but for flash, place it inside your definition !
+        (create) name   ( -- ) Creates and links a new invisible dictionary
+                               header that does nothing.
+                               Use FIG-style <builds .. does> !
+        find            ( c-addr len -- a-addr flags )
+                               Searches for a String in Dictionary.
+                               Gives back flags, which are different to ANS !
+
+        0-foldable      ( -- ) Current word becomes foldable with zero constants
+        1-foldable      ( -- ) Current word becomes foldable with one constants
+        2-foldable      ( -- ) Current word becomes foldable with two constants
+        3-foldable      ( -- ) Current word becomes foldable with 3   constants
+            ...
+        7-foldable      ( -- ) Current word becomes foldable with 7   constants
+
+;------------------------------------------------------------------------------
+; Compiler essentials  (subtle differences to ANS)
+;------------------------------------------------------------------------------
+
+        execute         ( a-addr -- ) Calls subroutine
+        recurse         ( -- ) Lets the current definition call itself
+        ' name          ( -- a-addr ) Tries to find name in dictionary
+                                      gives back executable address
+        ['] name        ( -- a-addr)  Tick that compiles the executable address
+                                      of found word as literal
+        postpone name   ( -- ) Helps compiling immediate words.
+        does>           ( -- ) executes: ( -- a-addr )
+                               Gives address to where you have stored data.
+        <builds         ( -- ) Makes Dictionary header and reserves space
+                               for special call.
+        create name     ( -- ) Create a definition with default action which
+                               cannot be changed later. Use <builds does> instead.
+                               Equivalent to : create <builds does> ;
+        state           ( -- a-addr ) Address of state variable
+        ]               ( -- ) Switch to compile state
+        [               ( -- ) Switch to execute state
+        ;               ( -- ) Finishes new definition
+        : name          ( -- ) Opens new definition
+
+;------------------------------------------------------------------------------
+; Control structures (exactly ANS)
+;------------------------------------------------------------------------------
+Internally, they have complicated compile-time stack effects.
+
+Decisions:
+
+flag if ... then
+flag if ... else ... then
+
+        then            ( -- )           This is the common
+        else            ( -- )           flag if ... [else ...] then
+        if              ( flag -- )      structure.
+
+Case:
+
+n case
+     m1   of ... endof
+     m2   .. ... .....
+   flag  ?of ... endof
+    all others
+  endcase
+
+        case            ( n -- n )       Begins case structure
+        of              ( m -- )         Compares m with n, choose this if n=m
+        ?of             ( flag -- )      Flag-of, for custom comparisions
+        endof           ( -- )           End of one possibility
+        endcase         ( n -- )         Ends case structure, discards n
+
+Indefinite Loops:
+
+begin ... again
+begin ... flag until
+begin ... flag while ... repeat
+
+        repeat          ( -- ) Finish of a middle-flag-checking loop.
+
+        while           ( flag -- ) Check a flag in the middle of a loop
+
+        until           ( flag -- ) begin ... flag until
+                                    loops as long flag is true
+        again           ( -- )  begin ... again
+                                is an endless loop
+        begin           ( -- )
+
+
+Definite Loops:
+
+limit index   do ... [one or more leave(s)] ... loop
+             ?do ... [one or more leave(s)] ... loop
+              do ... [one or more leave(s)] ... n +loop
+             ?do ... [one or more leave(s)] ... n +loop
+
+
+        k               ( -- u|n ) Gives third  loop index
+        j               ( -- u|n ) Gives second loop index
+        i               ( -- u|n ) Gives innermost loop index
+
+
+        unloop          (R: old-limit old-index -- )
+                        Drops innermost loop structure,
+                        pops back old loop structures to loop registers
+
+        exit            ( -- ) Returns from current definition.
+                               Compiles a ret opcode.
+
+        leave           ( -- ) (R: old-limit old-index -- )
+                        Leaves current innermost loop promptly
+
+        +loop           ( u|n -- )
+                        (R: unchanged | old-limit old-index -- )
+                        Adds number to current loop index register
+                        and checks whether to continue or not
+
+        loop            ( -- )
+                        (R: unchanged | old-limit old-index -- )
+                        Increments current loop index register by one
+                        and checks whether to continue or not.
+
+        ?do             ( Limit Index -- )
+                        (R: unchanged | -- old-limit old-index )
+                        Begins a loop if limit and index are not equal
+
+        do              ( Limit Index -- )
+                        (R: -- old-limit old-index )
+                        Begins a loop
+
+;------------------------------------------------------------------------------
+; Common Hardware access
+;------------------------------------------------------------------------------
+
+        reset           ( -- ) Reset on hardware level
+        dint            ( -- ) Disables Interrupts
+        eint            ( -- ) Enables  Interrupts
+        eint?           ( -- ) Are Interrupts enabled ?
+        nop             ( -- ) No Operation. Hook for unused handlers !
+
+        lpm0            ( -- ) Enter LPM0 and enable IRQs:
+                          CPU, MCLK are disabled.
+                          SMCLK, ACLK are active
+
+        lpm1            ( -- ) Enter LPM1 and enable IRQs:
+                          CPU, MCLK are disabled. 
+                          DCO and DC generator are disabled if 
+                          the DCO is not used for SMCLK.
+                          ACLK is active.
+
+        lpm2            ( -- ) Enter LPM2 and enable IRQs:
+                          CPU, MCLK, SMCLK, DCO are disabled.
+                          DC generator remains enabled.
+                          ACLK is active.
+
+        lpm3            ( -- ) Enter LPM3 and enable IRQs:
+                          CPU, MCLK, SMCLK, DCO are disabled.
+                          DC generator disabled.
+                          ACLK is active.
+
+        lpm4            ( -- ) Enter LPM4 and enable IRQs:
+                          CPU and all clocks disabled.
+
+        wakeup          ( -- R: Sleep Return -- Wake Return )
+                        Wake up CPU by clearing the LPM bits on the
+                        interrupt frame on stack. Either use this directly
+                        as interrupt handler or within the deepest return stack
+                        level of the interrupt handling definition.
+
+        cflash!         ( char c-addr -- ) Writes byte to flash
+        flash!          ( u|n a-addr -- ) Writes single number to flash
+
+        eraseflash      ( -- ) Erases everything. Clears Ram. Restarts Forth.
+        eraseflashfrom  ( a-addr -- ) Starts erasing at this address.
+                                      Clears Ram. Restarts Forth.
+                                      Needs to be on a 512 byte border
+                                      for Flash-based chips.
+                                      Simply needs to be even for FRAM-Chips.
+
+;------------------------------------------------------------------------------
+; Specials for MSP430F2274:
+;------------------------------------------------------------------------------
+
+                                                 Reads analog-digital-converter
+        analog          ( u-channel -- u-value )   with 2.5 V reference voltage
+        adc-1.5         ( u-channel -- u-value )   with 1.5 V reference voltage
+        adc-vcc         ( u-channel -- u-value )   with Vcc as reference
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-timera1
+        irq-timera0
+        irq-watchdog
+        irq-timerb1
+        irq-timerb0
+        irq-rx
+        irq-tx
+
+;------------------------------------------------------------------------------
+; Specials for MSP430G2553:
+;------------------------------------------------------------------------------
+
+                                                 Reads analog-digital-converter
+        analog          ( u-channel -- u-value )   with 2.5 V reference voltage
+        adc-1.5         ( u-channel -- u-value )   with 1.5 V reference voltage
+        adc-vcc         ( u-channel -- u-value )   with Vcc as reference
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-timera1
+        irq-timera0
+        irq-watchdog
+        irq-timerb1
+        irq-timerb0
+        irq-rx
+        irq-tx
+        irq-comp
+
+;------------------------------------------------------------------------------
+; Specials for MSP430G2955, MSP430G2855, MSP430G2755:
+;------------------------------------------------------------------------------
+
+                                                 Reads analog-digital-converter
+        analog          ( u-channel -- u-value )   with 2.5 V reference voltage
+        adc-1.5         ( u-channel -- u-value )   with 1.5 V reference voltage
+        adc-vcc         ( u-channel -- u-value )   with Vcc as reference
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-timera1
+        irq-timera0
+        irq-watchdog
+        irq-timerb1
+        irq-timerb0
+        irq-rx
+        irq-tx
+        irq-comp
+        irq-timerc1
+        irq-timerc0
+
+;------------------------------------------------------------------------------
+; Specials for MSP430F1612:
+;------------------------------------------------------------------------------
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-timera1
+        irq-timera0
+        irq-watchdog
+        irq-timerb1
+        irq-timerb0
+        irq-dac
+        irq-rx0
+        irq-tx0
+        irq-rx1
+        irq-tx1
+
+;------------------------------------------------------------------------------
+; Specials for MSP430F5529:
+;------------------------------------------------------------------------------
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-comp
+        irq-watchdog
+        irq-rtc
+
+        More IRQs available, will be added on desire !
+
+;------------------------------------------------------------------------------
+; Specials for MSP430FR4133:
+;------------------------------------------------------------------------------
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-adc
+        irq-watchdog
+        irq-rtc
+        irq-timera0     TA0CCR0
+        irq-timera1     TA0CCR1
+        irq-timerb0     TA1CCR0
+        irq-timerb1     TA1CCR1
+        irq-uscia
+        irq-uscib
+        irq-lcd
+
+;------------------------------------------------------------------------------
+; Specials for MSP430FR5969:
+;------------------------------------------------------------------------------
+
+        irq-port1       ( -- a-addr ) Memory locations for IRQ-Hooks
+        irq-port2
+        irq-port3
+        irq-port4
+        irq-adc
+        irq-comp
+        irq-watchdog
+        irq-rtc
+
+        More IRQs available, will be added on desire !
+
+High memory access with double address:
+       
+        x@              ( ud -- u|n ) Fetches from high memory
+        x!              ( u|n ud -- ) Stores to high memory
+
+        c@              ( ud -- char ) Fetches byte from high memory
+        c!              ( char ud )    Stores byte to high memory
+
+
+Matthias Koch, Summer 2011, updated Spring 2015

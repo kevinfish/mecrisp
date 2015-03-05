@@ -1,0 +1,159 @@
+
+Use your LEDs for communication in a firefly inspired way !
+
+This is a short primer on my experience in using a pair of light emitting diodes to transfer data between two microcontrollers.
+
+Do you already know that a LED is a photodiode too, which is especially sensitive to its own emitted wavelength ?
+If a LED (with its resistor) is connected between two tristate digital pins, it is possible to shine, to reverse charge the junction capacitance and to measure if this capacitance has already been discharged by photo current.
+
+Darkness:       Low  -- Resistor -- (Anode Cathode) -- Low
+Shine:          High -- Resistor -- (Anode Cathode) -- Low
+Reverse Charge: Low  -- Resistor -- (Anode Cathode) -- High
+Measure:        Low  -- Resistor -- (Anode Cathode) -- Input
+
+Look means: Reverse charge LED with cathode high, then switch cathode terminal to input and wait for the high-to-low-transition to determine light intensity or wait a fixed time and take one shot to sample a light/darkness bit.
+
+Now lets go on to use this for communication:
+
+The basic loop is really very simple.
+
+  Fetch the duration to shine ( in which the data is prepared for transmit )
+  Let it shine !
+
+  Specify a maximum duration to look around
+  Look out for the chosen number of samples and save them in memory,
+    until maximum numbers of samples are reached or
+    until a light-to-dark transition is found, in which case some bit of data has arrived.
+
+  Repeat.
+
+To be a bit more specific, I had best experience with those values:
+
+Two identical clear red high brightness 5mm LEDs.
+Time basis is set to about 200 us and depends on your LED, desired transfer speed and range, on ambient light level and on voltage. A shorter time basis will result in higher transfer speeds, but also needs higher communication light levels,
+which in turn decreases usable distance. A longer time basis slows down communication, but increases range, and choosing a much
+longer time basis leads to trouble with ambient light, because the sensivity increases.
+
+  Shine for 8 times (or 4 or 12 times, when data is being transmitted)
+
+  Look 32 times, shift the light/darkness bits into a variable
+                 and look for pattern "light-light-light-dark-dark".
+                 If this pattern is found, give light/darkness-bits to further processing of pulse length
+                 and continue immediately with shining.
+
+  Repeat.
+
+With this setup, your both "Fireflies" will already synchronise and you can choose how to encode and decode your
+data in pulse lengths. It is also possible to get in touch if one firefly waits in darkness looking for first pulse.
+
+I found out that the seen pulses are often longer than those send out, because if both fireflies differ in "clock phase", one shine-time will be distributed between two look-times. Sometimes it comes exactly, and very seldom shorter or two longer. On this exploration, I found it usefull for stable links to use this pulse lengths:
+
+So a pulse of  4 shines will be accepted in the seen range of  3 to  6 times,
+   a pulse of  8 shines                         seen range of  7 to 10 times,
+   a pulse of 12 shines                         seen range of 11 to 14 times.
+
+Clock imperfections should not matter much - there is no need for a stable clock !
+
+Now it's your turn to decide how to encode data with this.
+
+In the original paper to this topic of Dietz, Yerazunis and Leigh "Very Low-Cost Sensing and Communication Using Bidirectional LEDs" (2003), a RS232-like protocol is proposed, but I found a shorter way:
+
+When idling, transmit logic zero = 8 shines, and shift incoming pulses continuously through a data receive register. When data is to be transmitted, start with the leading logic one, which is encoded as 4 shines, complete the other bits and finish it with a long 12-shines carry pulse. On this occasion, save the contents of the data receive register and clear it afterwards.
+
+Here come some examples:
+34 = %100010 will be transmitted as (4) (8) (8) (8) (4) (8) (12)
+6  = %110 as (4) (4) (8) (12)
+0 as (12) - as there is always 0 in data receive register a the beginning.
+
+  8 8 8    4 8 4 12   12   4 12   8 8 8 8 8   4 4 8 12
+  Idling   -->    5  ->0   -> 1   Idling      -->    6
+
+This way "small values" need less pulses and transmit times can be shorter.
+
+I choosed data receive register to be 16 bits long, and bits that fall out of the register while looking for pulses and rotating in new ones are discarded.
+
+There is only one issue left:
+While trying to sync, there can be random bits in data receive register. I solved this by waiting for 18 correctly seen pulses (which is considered to be link-up) before attempting to send actual data. Two pulse exchanges are enough to get in sync, and 16 pulse exchanges assure data receive register is cleared. Additionally, this rather long syncing waits until link is stable, as the fireflies may be moving while trying to get in touch. Link-down is detected as time-out after 32 lookings without detecting light-light-light-darkness-darkness after a connection has been established.
+
+Here is a longer example, with the values in parens the seen pulse lengths in base times.
+
+8 (9) 8 (9)   8 (8) 8 (9) 8 (8) 8 (8) 8 (7) 8 (9) 8 (8) 8 (8)
+<-Syncing->   <-- Clearing both data registers with 16 logic
+
+8 (8) 8 (9) 8 (8) 8 (8) 8 (10) 8 (9) 8 (8) 8 (8)
+zeros and assure for stable connection       --> (Link is now up!)
+
+8 (9) 8 (8) 4 (8) 8 (9) 8 (4) 4 (5) 12 (9) 8 (13) 8 (Timeout in looking)
+                           <-Incoming %110 = 6->
+Idling...   <-- Outgoing: %1001=9  -->              (Link down!)
+
+Hopefully you have now an idea how it works !
+
+
+
+I implemented this long before Mecrisp in a well optimised assembler routine,
+if you like to try it, hook a clear red high brightness LED with anode to P2.0 and cathode to P2.1 on
+a msp430g2553, don't forget a resistor of about 100 ohms and connect a 32768 Hz clock quartz to Xin/Xout.
+
+Those routines are included in "forth-mecrisp-2553-ledcomm.hex":
+
+led-prepare ( -- ) Charges the LED
+led-look    ( -- Flag ) Light or Darkness ?
+led-on      ( -- ) Shine !
+led-off     ( -- ) Darkness !
+
+false       ( -- 0 )
+true        ( -- -1 )
+
+ledcomm-rx-hook  ( -- address ) Variable that points to a routine with ( Received-Data -- )
+ledcomm-tx-hook  ( -- address ) Variable that points to a routine with ( -- false | Data-to-be-Transmitted true )
+ledcomm-connect-hook ( -- address ) Variable that points to a routine with ( -- )
+ledcomm-disconnect-hook ( -- address ) Variable that points to a routine with ( -- )
+
+ledcomm-tick  ( -- ) Should be called in constant time intervals... Intended to be a timer IRQ handler.
+
+ledcomm-dark  ( -- ) Be dark while waiting for sync, only one firefly can be in this mode.
+ledcomm-shine ( -- ) Shine while waiting for sync
+ledcomm-init  ( -- ) Do internal initialisations. Call before first use of ledcomm-tick !
+
+
+This small program lets you "chat" between two Fireflies:
+
+: cr 10 emit ;
+
+: rx  emit ;
+: tx  ?key if key dup emit true else false then ;
+: up   ."  (Up) " ;
+: down ."  (Down)" cr ;
+
+' rx  ledcomm-rx-hook !
+' tx  ledcomm-tx-hook !
+' up   ledcomm-connect-hook !
+' down ledcomm-disconnect-hook !
+
+ledcomm-shine
+ledcomm-init
+' ledcomm-tick irq-timera0 !
+$10  $0162 !
+8  $0172 !
+$110 $0160 !
+
+: wait begin again ;
+eint wait
+
+Look at it:
+Define your routines that handle incoming data, prepare data for sending and signal link ups and downs.
+Hook those to their vectors.
+Initialise Ledcomm and install it's timer tick irq handler
+Setup the timer, here to 8/32768 s with external clock quartz.
+Idle the interpreter and run Ledcomm-Chat by enabling interrupts.
+
+To use the DCO at 8 MHz for this, try instead:
+
+$10 $0162 !   TACCTL0:  CCIE-Bit for Interrupts
+1953 $0172 !  TACCR0:   Counter --> (8 / 32768) s = (1953 / 8 000 000) s
+$210 $0160 !  TACTL:    $10 Up-Mode, $200 for SMCLK ($100 is for ACLK)
+
+Let it shine !
+
+Matthias Koch

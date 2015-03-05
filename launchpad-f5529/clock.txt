@@ -1,0 +1,68 @@
+
+\ Change clock frequency of MSP430F5529
+
+\ $200 constant P1IN
+\ $202 constant P1OUT
+\ $204 constant P1DIR
+
+$0102 constant SFRIFG1
+
+\ Chip-specific DCO tap setting for 16 MHz at location $1A22
+
+$0160 constant CSCTL0  \ DCO Modulation & Tap
+$0162 constant CSCTL1  \ DCO range and settings
+$0164 constant CSCTL2  \ FLL loop divider and multiplier
+$0166 constant CSCTL3  \ FLL reference select
+$0168 constant CSCTL4  \ ACKL and MCLK source
+$016A constant CSCTL5  \ SMCLK and MCLK divider
+$016C constant CSCTL6  \ Crystal settings
+$016E constant CSCTL7  \ Fault flags
+$0170 constant CSCTL8  \ Clock request ?
+$0172 constant CSCTL9  \ Crystal Bypass
+
+$0600 constant UCA1CTLW0
+$0606 constant UCA1BRW
+$0608 constant UCA1MCTL
+
+: disable-fll ( -- ) [ $D032 , $0040 , ] inline ; \ Set   SCG0  Opcode bis #40, r2
+: enable-fll  ( -- ) [ $C032 , $0040 , ] inline ; \ Clear SCG0  Opcode bic #40, r2
+
+: init-fll ( -- )
+
+  \ 1 P1DIR c!
+  \ 1 P1OUT c! \ Let LED shine
+
+  disable-fll
+  2 4 lshift CSCTL3 ! \ Select REFOCLK as FLL reference
+  1 8 lshift          \ ACLK = REFOCLK
+  4 4 lshift or       \ SMCLK = DCOCLKDIV
+  4 or       CSCTL4 ! \ MCLK = DCOCLKDIV
+  
+  $1308      CSCTL0 ! \ A good DCO guess for quickly reaching target frequency
+  4 4 lshift CSCTL1 ! \ DCO Range around 8 MHz
+  244        CSCTL2 ! \ REFOCLK * 244 = 32768 Hz * 244 = 7 995 392 Hz
+  nop                 \ Wait a little bit
+  enable-fll
+
+  begin
+    0 CSCTL7 !      \ Clear oscillator fault flags
+    2 SFRIFG1 bic!    \ Clear oscillator fault flag
+    2 SFRIFG1 bit@ not \ No more oscillator faults ?
+  until
+
+  \ 0 P1OUT c! \ Let LED emit darkness
+
+  \ Change UART baud rate
+
+  1 UCA1CTLW0 bis!  \ Put UART in Reset state
+
+  \ Without oversampling
+  \ 69 UCA1BRW !      \ Baud rate divider
+  \ 4 1 lshift UCA1MCTLW ! \ BRS 4, BRF 0
+
+  \ With oversampling
+  4 UCA1BRW !      \ Baud rate divider
+  5 1 lshift $31 or UCA1MCTL c! \ BRS 5, BRF 3, UCOS16
+
+  1 UCA1CTLW0 bic!  \ Let UART run
+;

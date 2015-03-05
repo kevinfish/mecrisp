@@ -1,0 +1,273 @@
+
+compiletoflash
+
+\ ------------------------------------------------
+\  A quick list of words - a wish of Paul Verbeke
+\ ------------------------------------------------
+
+\ Dictionary structure is:
+\  (2-aligned)
+\      1 Byte Flags 
+\      1 Byte Name length and name characters as counted string, maybe with filling zero to align
+\  (2-aligned)
+\      2 Bytes Link
+\      Code entry point
+
+: list ( -- )
+  cr
+  dictionarystart 
+  begin
+    dup 1+ ctype space
+    dictionarynext
+  until
+  drop
+;
+
+\ -------------------------------------------------------------
+\  Which definitions are in use ? - An idea of Sandy Bumgarner
+\ -------------------------------------------------------------
+
+0 variable searchfor
+
+: searchcalls ( address-of-name -- )
+
+  \ As this searches for call opcodes until first ret,
+  \ it may fail on definitions using multiple exit points or inline strings.
+  \ Definitions in core include all sort of assembly tricks, direct jumps and others, so you cannot
+  \ rely on the output to determine what definitions in core are using Flamingo.
+
+  dup skipstring
+  begin
+    2+
+    dup @ $12B0 = if dup 2+ @ searchfor @ = if drop ctype space exit then then
+    dup @ $4130 = \ Ret opcode
+  until
+  2drop
+;
+
+: uses ( -- ) \ "uses Flamingo" searches for definitions which contain calls to Flamingo.
+  cr ' searchfor ! \ Get code entry point
+
+  dictionarystart
+  begin
+    dup c@ $FF <> if dup 1+ searchcalls then \ Skip invisible definitions
+    dictionarynext
+  until
+  drop
+;
+
+\ -------------------------------------------------------------
+\  Disassembler
+\ -------------------------------------------------------------
+
+\ MSP430 Disassembler, Copyright (C) 2011  Matthias Koch
+\ This is free software under GNU General Public License v3.
+\ Knows MSP430 machine instructions, resolves call entry points and handles inline strings.
+\ Usage: Specify your target address in disasm-$ and give disasm-step some calls.
+
+: name. ( Address -- ) \ Wenn die Adresse der Code-Anfang eines Dictionarywortes ist, wird es benannt.
+  >r                   \ If the address is Code-Start of a dictionary word, it gets named.
+  dictionarystart
+  begin
+    dup   1+ dup skipstring 2+ r@ = if ."   --> " ctype else drop then
+    dictionarynext
+  until
+  r> 2drop
+;
+
+0 variable disasm-$   \ Current position for disassembling
+
+: disasm-fetch        \ ( -- Data ) Fetches opcodes and operands, increments disasm-$
+    disasm-$ @ @      \             Holt Opcode oder Operand, incrementiert disasm-$
+  2 disasm-$ +!   ;
+
+: u.4 0 <# # # # # #> type ;
+: u.ns 0 <# #s #> type ;
+: u.h u.ns ." h";
+: register. ." r" decimal u.ns hex ;
+: disasm-const ." #" u.h ;
+
+: disasm-jumps   \ Bei Sprüngen ist bereits alle Information im Opcode enthalten.
+  dup $1C00 and  \ Jumps have all information readily in their opcodes.
+                 \ ( Opcode -- )
+  case
+    $0000 of ." jnz " endof
+    $0400 of ." jz "  endof
+    $0800 of ." jnc " endof
+    $0C00 of ." jc "  endof
+    $1000 of ." jn "  endof
+    $1400 of ." jge " endof
+    $1800 of ." jl "  endof
+    $1C00 of ." jmp " endof
+  endcase
+
+  \ Calculate Offset
+  $03FF and ( Offset )
+    dup $0200 and if $FC00 or then
+  shl disasm-$ @ +   u.4
+;
+
+: disasm-source   \ Takes care of source operands
+                  \ Kümmert sich um den Quelloperanden des Befehls !
+                  ( Opcode Source-Reg -- Opcode )
+
+  over ( Opcode Source-Reg Opcode )  
+  dup $0040 and if ." .b " else ." .w " then
+
+  $0030 and
+  case
+    $0000 of \ Register
+            case
+              3 of 0 disasm-const endof   \ CG
+              dup register.
+            endcase
+          endof
+
+    $0010 of \ Indexed
+            case
+              2 of ." &" disasm-fetch u.h endof \ SR
+              3 of 1 disasm-const endof         \ CG
+
+              dup disasm-fetch u.h ." (" register. ." )"
+            endcase
+          endof
+
+    $0020 of \ Indirect
+            case
+              2 of 4 disasm-const endof \ SR
+              3 of 2 disasm-const endof \ CG
+
+              dup ." @" register.
+            endcase
+          endof
+
+    $0030 of \ Indirect Autoincrement
+             \ sr: 8 cg: -1 pc: Constant   All others: @rx+
+            case
+              2 of  8           disasm-const endof \ SR
+              3 of -1           disasm-const endof \ CG
+              0 of disasm-fetch disasm-const endof \ PC
+
+              dup ." @" register. ." +"
+            endcase
+          endof
+  endcase
+;
+
+: disasm-destination \ Takes care of destination operands in two-operand-instructions
+  ." , "             \ Kümmert sich um den Zieloperanden bei zwei-Operanden-Befehlen.
+  dup $0080 and      \ ( Opcode -- )
+  if  \ Indexed Destination
+
+    dup $000F and 2 =
+    if \ SR - Absolute addressing
+      drop disasm-fetch ." &" u.h
+    else \ Normal Indexed
+      disasm-fetch u.h ." (" $000F and register. ." )"
+    then
+
+  else  \ Register Destination
+    $000F and register.
+  then
+;
+
+: disasm-string ( -- ) \ Takes care of an inline string
+  disasm-$ @ dup ctype skipstring disasm-$ !
+;
+
+: disasm-single ( Opcode -- )
+    dup $0F80 and
+    case
+      $0000 of ." rrc"  endof
+      $0080 of ." swpb" endof
+      $0100 of ." rra"  endof
+      $0180 of ." sxt"  endof
+      $0200 of ." push" endof
+      $0280 of ." call" endof
+      $0300 of ." reti" endof
+
+      ." Unknown Opcode "
+    endcase
+
+  dup $000F and \ Mask Source Register
+  ( Opcode Source-Reg )
+  disasm-source
+  ( Opcode )
+
+  \ Bei Call-Befehlen versuchen, den Einsprung zu benennen und Strings zu erkennen.
+  \ Try to give calls a name and detect inline strings.
+  $12B0 = if
+    disasm-$ @ 2- @  \ Fetch call target address
+    dup name. \ Try to give it a name
+    case
+      ['] ." $1E + of ."    .' " disasm-string ." '" endof \ It is ." runtime ?
+      ['] s" $06 + of ."    s' " disasm-string ." '" endof \ It is s" runtime ?
+      ['] c" $06 + of ."    c' " disasm-string ." '" endof \ It is c" runtime ?
+    endcase
+  then
+;
+
+: disasm-double ( Opcode -- )
+  dup $0F00 and 8 rshift \ Mask Source Register
+  ( Opcode Source-Reg )
+  disasm-source
+  ( Opcode )
+  disasm-destination
+;
+
+: disasm ( -- )    \ Disassembles one machine instruction and advances disasm-$
+  disasm-fetch     \ Fetch Opcode and test instruction type.
+                   \ Opcode holen und auf Befehlstyp hin prüfen.
+
+  dup $F000 and  ( Opcode Instruction-Mask )
+  case
+     $1000 of          disasm-single endof
+     $2000 of          disasm-jumps  endof
+     $3000 of          disasm-jumps  endof
+     $4000 of ." mov"  disasm-double endof
+     $5000 of ." add"  disasm-double endof
+     $6000 of ." addc" disasm-double endof
+     $7000 of ." subc" disasm-double endof
+     $8000 of ." sub"  disasm-double endof
+     $9000 of ." cmp"  disasm-double endof
+     $A000 of ." dadd" disasm-double endof
+     $B000 of ." bit"  disasm-double endof
+     $C000 of ." bic"  disasm-double endof
+     $D000 of ." bis"  disasm-double endof
+     $E000 of ." xor"  disasm-double endof
+     $F000 of ." and"  disasm-double endof
+
+     ." Unknown Opcode " drop
+  endcase
+;
+
+: memstamp \ ( Addr -- ) Shows a memory location nicely
+    dup u.4 ." : " @ u.4 ."   " ;
+
+: disasm-step ( -- )
+    disasm-$ @                 \ Note current position
+    dup memstamp disasm cr     \ Disassemble one instruction
+
+    begin \ Write out all disassembled memory locations
+      2+ dup disasm-$ @ <>
+    while
+      dup memstamp cr
+    repeat
+    drop
+;
+
+: seec ( -- ) \ Continues to see
+  base @ hex cr
+
+  begin
+    disasm-$ @ @ $4130 =  \ Flag: Loop terminates with ret
+    disasm-step
+  until
+
+  base !
+;
+
+: see ( -- ) \ Takes name of definition and shows its contents from beginning to first ret
+  ' disasm-$ !
+  seec
+;

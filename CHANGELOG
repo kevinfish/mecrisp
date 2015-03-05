@@ -1,0 +1,142 @@
+18.08.2011, Matthias Koch:
+  Fixed Smudge that has been appending a $0000 at the end of every definition written to Flash.
+  Now the standard ANS-Create behaviour is as expected
+  : ans-create <builds does> ;
+
+28.08.2011, Matthias Koch:
+  New target ! First samples of MSP430G2553 arrived. Disassembler now included.
+
+13.09.2011 and 18.09.2011, Matthias Koch:
+  Saved some space and included comparator IRQ handler in 9k for 2553.
+  Entry points changed, disassembler adapted.
+  First release of Ledcomm.
+  Fixed severe bug in eraseflash.
+
+02.02.2012, Matthias Koch, Mecrisp 0.4:
+  Fixed eraseflash, should be working properly now
+  Behaviour of postpone for normal (and inline) words is now as specified by ANS
+  Added nvariable for defining variables that allocate up to 15 words in RAM
+
+05.05.2012, Matthias Koch, Mecrisp 0.5:
+  Number Prefix # for decimal added
+  Assembler now included
+  Create now aligns dictionary pointer if it is uneven
+  Optimized a lot of small routines:
+  - Some comparisions now take less clock cycles
+  - Faster um/mod
+  - Faster rshift & lshift
+  - Support for Constant Generator in opcodes and literals added
+  - Double literals will generate shorter code with added 2literal,
+  - Deep changes in code generator
+
+28.06.2012, Matthias Koch, Mecrisp 0.6:
+  Replaced cmove with ANS-move
+  Fixed bug in d< and d>
+  Added range extension for Sine and Cosine in Forth
+  Added CASE in Forth
+
+28.07.2012, Matthias Koch, Mecrisp 0.7:
+  ['] is now included in core
+  Added jump, to compile special jumps
+  Faster >r r@ r>
+  Loop-structures now need less clock cycles: ?do do leave unloop loop +loop
+  Forth-Case optimized
+  Experimental Forth source for Cornerstone, close to ANS Marker, added
+  Added two new analog references: adc-1.5 and adc-vcc. "Analog" still uses 2.5V.
+
+06.10.2012 Matthias Koch, Mecrisp 0.8:
+  Tidied up source code
+  Entry point of eraseflash changed, important for Cornerstone
+  Deep changes in code generator
+  - Smaller way to write a handful of literals
+  - if now uses a faster opcode to check flags
+  - bit@ cbit@ and comparisions = <> u< can be opcoded now
+  - do/?do loops needs lesser code
+  Rearranged words to use more short jumps
+  Optimized a lot of small routines
+
+13.10.2012 Matthias Koch, Mecrisp 0.9:
+  Case structure is now included in core
+  ?do generates even shorter code
+  Separate leavestack is not needed anymore
+  New Flag $30 means Immediate, Compile-Only
+  ?comp and ?stack removed
+  Mecrisp is now almost stateless
+  - only interpret uses state
+  - only : ; [ ] change state
+  Small optimisations here and there
+  Hexdump utility for cloning now included
+  Tidied up disassembler
+  - takes about 500 Bytes less
+  - doesn't need any global variables now
+
+24.12.2012: Mecrisp 0.9 reaches stable !
+
+09.04.2013 Matthias Koch, Mecrisp 0.9.1:
+  New target ! First samples of MSP430G2955 arrived.
+  Vectors irq-timerc0 and irq-timerc1 are for additional Timer A3.
+  As MSP430G2855 and MSP430G2755 seem to differ only in Flash size,
+  hex files for them are included, too, but untested.
+  Adjusted jump range check constants for all targets
+  in controlstructures.asm to catch too long jumps.
+  This happens only to definitions with hundreds of lines, but just to be sure.
+  Fresh hex files are included, they are binary compatible 
+  with older Mecrisp 0.9 releases and their hexdumps.
+  Updated English sources
+
+24.06.2013 Matthias Koch, Mecrisp 1.0:
+  Finally the first stable release of Mecrisp.
+  No bugs have been found, no changes were needed.
+  This is simply a cosy compilation to have all the files scattered around 
+  while going the long way to stable together in one place. 
+
+03.07.2013 Matthias Koch, Mecrisp 1.0 Lowpower Experimental:
+  Introduced free working register r7 saved solely on IRQ entry which makes core smaller.
+  Changed terminal to use ACLK and sleep in LPM3.
+  Runs with 32768 Hz ACLK crystal only !
+  Included definitions LPM and WAKEUP
+  Adapted basis definitions to new clock
+
+26.08.2013 Matthias Koch, Mecrisp 1.1:
+  Saved more memory and included in core: cr space / ( u*/
+  Tab is now accepted as whitespace
+  Introduced free working register r7 saved solely on IRQ entry for all targets
+  F1612 is now equipped with UART interrupt vectors
+  Lot of small optimisations in core
+
+08.09.2013 Matthias Koch, Mecrisp 1.1.1:
+  Bugfix:  u<=  u>  <=  >
+
+17.09.2013 Matthias Koch, Mecrisp 1.1.2:
+  Updated English sources, no changes in hex files
+
+07.11.2013 Matthias Koch, Mecrisp 1.1.3:
+  Just replaced list.txt which had a small flaw by more advanced insight.txt.
+  No changes in hex files
+
+
+22.02.2015, Matthias Koch, Mecrisp 2.0.0 experimental:
+
+  New targets:
+
+  * MSP430F5529 Launchpad
+  * MSP430FR4133 FRAM Launchpad
+  * MSP430FR5969 FRAM Launchpad
+
+  So many changes !
+
+  Mecrisp 2.0.0 is inspired by experience with Mecrisp-Stellaris,
+  adds many new features, changes string handling to address-length,
+  contains everything necessary for multitasking and lowpower.
+
+  This increases core size from 9 kb to 11 kb, but I think it is
+  worth it as those new features give much more convenience and fun.
+
+  For better maintainability the source code has been restructured, many
+  assembler switches and the German language source tree have been dropped.
+
+  The list of changes would be too long, see glossary for details and
+  enjoy many new ready-to-run Forth examples.
+
+  Of course, changing so much might have introduced fresh errors,
+  so if you need good stability stay with rock solid 1.1.3 for a while.

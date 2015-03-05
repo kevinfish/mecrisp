@@ -1,0 +1,57 @@
+
+\ Change clock frequency of MSP430FR4133 and perform measurements on DCO
+
+$0204 constant P1DIR
+$020A constant P1SEL0
+
+$221 constant P4IN
+$223 constant P4OUT
+$225 constant P4DIR
+
+\ Chip-specific DCO tap setting for 16 MHz at location $1A22
+
+$0180 constant CSCTL0  \ DCO Modulation & Tap
+$0182 constant CSCTL1  \ DCO range and settings
+$0184 constant CSCTL2  \ FLL loop divider and multiplier
+$0186 constant CSCTL3  \ FLL reference select
+$0188 constant CSCTL4  \ ACKL and MCLK source
+$018A constant CSCTL5  \ SMCLK and MCLK divider
+$018C constant CSCTL6  \ ACLK divider and crystal settings
+$018E constant CSCTL7  \ FLL state and lock settings
+$0190 constant CSCTL8  \ Clock request ?
+
+$0500 constant UCA0CTLW0
+$0506 constant UCA0BRW
+$0508 constant UCA0MCTLW
+
+: disable-fll ( -- ) [ $D032 , $0040 , ] inline ; \ Set   SCG0  Opcode bis #40, r2
+: enable-fll  ( -- ) [ $C032 , $0040 , ] inline ;  \ Clear SCG0  Opcode bic #40, r2
+
+: init-fll ( -- )
+\  lcd-init
+\  s" 1 MHz" typelcd
+
+\  1 4 lshift P1SEL0 cbis! \ Enable MCLK output on P1.4
+\  1 4 lshift P1DIR cbis! \ Enable MCLK output on P1.4
+
+  disable-fll
+  1 4 lshift CSCTL3 ! \ Select REFOCLK as FLL reference
+  $0150      CSCTL0 ! \ A good DCO guess for quickly reaching target frequency
+  3 1 lshift CSCTL1 ! \ DCO Range around 8 MHz
+  244        CSCTL2 ! \ REFOCLK * 244 = 32768 Hz * 244 = 7 995 392 Hz
+  nop                 \ Wait a little bit
+  enable-fll
+
+  begin $0300 CSCTL7 bit@ not until \ Wait for FLL to lock
+
+
+  \ Change UART baud rate
+
+  1 UCA0CTLW0 bis!  \ Put UART in Reset state
+  4 UCA0BRW !       \ Baud rate divider
+  $5551 UCA0MCTLW ! \ Modulation BRS 0x55, BRF_5, UCOS16
+  1 UCA0CTLW0 bic!  \ Let UART run
+
+\  s" 8 MHz" typelcd
+;
+

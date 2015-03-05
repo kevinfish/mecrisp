@@ -1,0 +1,53 @@
+#!/bin/bash
+
+rm ../*.hex
+
+cd msp430f1612
+asl forth-mecrisp-1612.asm && p2hex forth-mecrisp-1612.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430f2274
+asl forth-mecrisp-2274.asm && p2hex forth-mecrisp-2274.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430g2553
+asl forth-mecrisp-2553.asm && p2hex forth-mecrisp-2553.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430g2553-lowpower
+asl forth-mecrisp-2553-lowpower.asm && p2hex forth-mecrisp-2553-lowpower.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430g2x55
+asl forth-mecrisp-2755.asm && p2hex forth-mecrisp-2755.p -r 0x0000-0xffff
+asl forth-mecrisp-2855.asm && p2hex forth-mecrisp-2855.p -r 0x0000-0xffff
+asl forth-mecrisp-2955.asm && p2hex forth-mecrisp-2955.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430fr4133
+asl forth-mecrisp-4133.asm && p2hex forth-mecrisp-4133.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430f5529
+asl forth-mecrisp-5529.asm && p2hex forth-mecrisp-5529.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..
+
+cd msp430fr5969
+asl forth-mecrisp-5969.asm && p2hex forth-mecrisp-5969.p -r 0x0000-0xffff
+mv *.hex ../../
+rm *.p
+cd ..

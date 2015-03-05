@@ -1,0 +1,231 @@
+
+compiletoflash
+
+\ -----------------------------------------------------------------------------
+\ LCD driver for MSP430FR4133 Launchpad
+\ -----------------------------------------------------------------------------
+
+\ Pins wirings internal:
+\   P1.0 TXD & Red LED
+\   P1.1 RXD
+\   P1.2 Button S1
+\   P2.3 RTS
+\   P2.4 CTS
+\   P2.6 Button S2
+\   P4.0 Green LED
+
+$164 constant SYSCFG2
+
+$600 constant LCDCTL0
+$602 constant LCDCTL1
+$604 constant LCDBLKCTL
+$606 constant LCDMEMCTL
+$608 constant LCDVCTL
+$60A constant LCDPCTL0
+$60C constant LCDPCTL1
+$60E constant LCDPCTL2
+$614 constant LCDCSSEL0
+$616 constant LCDCSSEL1
+$618 constant LCDCSSEL2
+$61A constant LCDCSSEL3
+
+$620 constant LCDMEM \ Byte access LCD memory 0 ($620) to LCD memory 19 ($633)
+
+: lcd-init ( -- )
+
+  1 12 lshift SYSCFG2 bis!  \ R13/R23/R33/LCDCAP0/LCDCAP1 pins selected
+
+  $FFFF LCDPCTL0 !  \ L0~L26 & L36~L39 pins selected
+  $07FF LCDPCTL1 !
+  $00F0 LCDPCTL2 !  
+
+  1 6 lshift LCDCTL0 !   \ Set ACLK as clock source
+
+  \ LCD Operation - Mode 3, internal 3.08v, charge pump 256Hz
+   3 12 lshift    \ Divider for charge pump frequency - 1024 kHz
+  10  8 lshift or  \ Voltage for display drive
+   1  7 lshift or   \ Charge pump enable
+   1  6 lshift or    \ Reference voltage enable
+  LCDVCTL !
+
+  2 LCDMEMCTL !   \   Clear LCD memory
+
+  $000F LCDCSSEL0 !  \ Configure COMs and SEGs
+  $0000 LCDCSSEL1 !  \ L0, L1, L2, L3: COM pins
+  $0000 LCDCSSEL2 !
+
+  $21 LCDMEM    c! \  L0 = COM0, L1 = COM1
+  $84 LCDMEM 1+ c!  \ L2 = COM2, L3 = COM3
+
+  3 3 lshift      \ 4-mux
+  4 or             \ LCDS on
+  1 or              \ LCD on
+  LCDCTL0 bis!       \ Turn on LCD, 4-mux selected
+;
+
+\ -----------------------------------------------------------------------------
+\ Artwork for a 14-Segment Font
+\ -----------------------------------------------------------------------------
+
+create lcdchars           \ Additional artwork welcome !
+
+$0000 ,  \ 32: Space
+$B090 ,  \ 33 !
+$6000 ,  \ 34 " 
+$5073 ,  \ 35 # 
+$50B7 ,  \ 36 $
+$2824 ,  \ 37 %
+$A29A ,  \ 38 &
+$4000 ,  \ 39 ' 
+$2200 ,  \ 40 ( 
+$8800 ,  \ 41 ) 
+$FA03 ,  \ 42 * 
+$5003 ,  \ 43 + 
+$1000 ,  \ 44 , 
+$0003 ,  \ 45 - 
+$0100 ,  \ 46 . 
+$2800 ,  \ 47 / 
+$28FC ,  \ 48 0 
+$2060 ,  \ 49 1 
+$00DB ,  \ 50 2 
+$00F3 ,  \ 51 3 
+$0067 ,  \ 52 4 
+$00B7 ,  \ 53 5 
+$00BF ,  \ 54 6 
+$00E4 ,  \ 55 7 
+$00FF ,  \ 56 8 
+$00F7 ,  \ 57 9 
+$5000 ,  \ 58 :
+$4800 ,  \ 59 ;
+$2810 ,  \ 60 < 
+$0013 ,  \ 61 = 
+$8210 ,  \ 62 > 
+$10C5 ,  \ 63 ?
+
+$40DD ,  \ 64 @
+$00EF ,  \ 65 A
+$50F1 ,  \ 66 B
+$009C ,  \ 67 C
+$50F0 ,  \ 68 D
+$009F ,  \ 69 E
+$008F ,  \ 70 F
+$00BD ,  \ 71 G
+$006F ,  \ 72 H
+$5090 ,  \ 73 I
+$0078 ,  \ 74 J
+$220E ,  \ 75 K
+$001C ,  \ 76 L
+$A06C ,  \ 77 M
+$826C ,  \ 78 N
+$00FC ,  \ 79 O
+$00CF ,  \ 80 P
+$02FC ,  \ 81 Q
+$02CF ,  \ 82 R
+$00B7 ,  \ 83 S
+$5080 ,  \ 84 T
+$007C ,  \ 85 U
+$280C ,  \ 86 V
+$0A6C ,  \ 87 W
+$AA00 ,  \ 88 X
+$B000 ,  \ 89 Y
+$2890 ,  \ 90 Z
+$009C ,  \ 91 [
+$8200 ,  \ 92 \
+$00F0 ,  \ 93 ]
+$2040 ,  \ 94 ^
+$0010 ,  \ 95 _
+ 
+$8000 ,  \ 96  `
+$00EF ,  \ 97  a
+$50F1 ,  \ 98  b
+$009C ,  \ 99  c
+$50F0 ,  \ 100 d
+$009F ,  \ 101 e
+$008F ,  \ 102 f
+$00BD ,  \ 103 g
+$006F ,  \ 104 h
+$5090 ,  \ 105 i
+$0078 ,  \ 106 j
+$220E ,  \ 107 k
+$001C ,  \ 108 l
+$A06C ,  \ 109 m
+$826C ,  \ 110 n
+$00FC ,  \ 111 o
+$00CF ,  \ 112 p
+$02FC ,  \ 113 q
+$02CF ,  \ 114 r
+$00B7 ,  \ 115 s
+$5080 ,  \ 116 t
+$007C ,  \ 117 u
+$280C ,  \ 118 v
+$0A6C ,  \ 119 w
+$AA00 ,  \ 120 x
+$B000 ,  \ 121 y
+$2890 ,  \ 122 z
+$8892 ,  \ 123 {
+$5000 ,  \ 124 |
+$2291 ,  \ 125 }
+$A004 ,  \ 126 ~
+$0000 ,  \ 127 DEL
+
+: lcdchar ( c -- x ) \ Translates ASCII to LCD-Bitpatterns.                     
+  32 umax 127 umin
+  32 - cells lcdchars + @
+1-foldable ;
+ 
+\ -----------------------------------------------------------------------------
+\ Types your strings !
+\ -----------------------------------------------------------------------------
+
+: get-first-char ( addr len -- addr   len c ) over c@ ;
+: cut-first-char ( addr len -- addr+1 len-1 ) 1- swap 1+ swap ;
+
+0 variable lcdposition
+
+: lcd! ( x -- ) \ Display a character bitmap on given position
+  lcdposition @ case
+                  0 of lcdmem  4 + bis! endof
+                  1 of lcdmem  6 + bis! endof
+                  2 of lcdmem  8 + bis! endof
+                  3 of lcdmem 10 + bis! endof
+                  4 of lcdmem  2 + bis! endof
+                  5 of lcdmem 18 + bis! endof
+                drop
+                endcase  
+;
+
+: clearlcd ( -- ) lcdmem 2+ 18 0 fill ;
+
+: typelcd ( addr len -- )
+  clearlcd
+  0 lcdposition !
+
+  dup 0<> if get-first-char 45 =  \ Is this a "-" ? The display has a special segment for a minus at the beginning.
+             if $400 lcdmem 4 + bis! cut-first-char then
+          then
+
+  begin
+    dup 0<>
+  while
+    get-first-char lcdchar lcd! cut-first-char
+    dup 0<> if get-first-char 46 = \ Is this a "." ? Segments for decimal dots available !
+               if $100 lcd! cut-first-char then
+            then
+    1 lcdposition +!
+  repeat
+  2drop
+;
+
+:  .lcd ( n -- ) s>d tuck dabs <# # # # # # # rot sign #> typelcd ;
+: u.lcd ( u -- )   0           <# # # # # # #          #> typelcd ;
+
+\ -----------------------------------------------------------------------------
+\ Demo
+\ -----------------------------------------------------------------------------
+
+: l ( -- ) 0 parse typelcd ; \ Show string to end of line
+
+compiletoram
+
+lcd-init
+l -Forth.-

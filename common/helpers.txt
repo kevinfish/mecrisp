@@ -1,0 +1,16 @@
+
+compiletoflash
+
+: restart ( -- ) $FFFE @ execute ; \ Restarts Mecrisp without performing a hardware Reset.
+
+: remove ( -- )  \ Removes the last dictionary entry from RAM.
+ \ Caution: Will crash later when used while compiling into flash or if RAM is empty.
+
+ $202 @     \ Fetch start address of current definition
+ dup $200 ! \ Store it as new dictionary pointer
+ 1+         \ Skip flags
+ skipstring \ Skip name
+ @          \ Get link
+ $202 !     \   and store it as current definition
+;
+

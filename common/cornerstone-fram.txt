@@ -1,0 +1,6 @@
+
+compiletoflash
+
+: cornerstone ( Name ) ( -- )
+  <builds does> eraseflashfrom
+;

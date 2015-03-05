@@ -1,0 +1,70 @@
+
+compiletoflash
+
+\ Sine and Cosine with Cordic algorithm
+
+: numbertable  <builds
+                  0 do
+                      token number 1 <> if ." Constant error." quit then ,
+                    loop
+               does> swap 2* + @ ;
+
+hex
+10 numbertable e^ka  C90F 76B1 3EB6 1FD5 0FFA 07FF 03FF 01FF 00FF 007F 003F 001F 000F 0007 0003 0001
+decimal
+
+: 2rshift 0 ?do d2/ loop ;
+
+: cordic ( f-angle -- f-error f-sine f-cosine )
+         ( Angle between -Pi/2 and +Pi/2 ! )
+  0 0 $9B74 0
+  16 0 do
+    2rot dup 0<
+    if
+      i e^ka 0 d+ 2rot 2rot
+            2over i 2rshift 2rot 2rot
+      2swap 2over i 2rshift
+      d- 2rot 2rot d+
+    else
+      i e^ka 0 d- 2rot 2rot
+            2over i 2rshift 2rot 2rot
+      2swap 2over i 2rshift
+      d+ 2rot 2rot 2swap d-
+    then
+  loop
+2-foldable ;
+
+: sine   ( f-angle -- f-sine )   cordic 2drop 2nip   2-foldable ;
+: cosine ( f-angle -- f-cosine ) cordic 2nip  2nip   2-foldable ;
+
+3,14159   2constant pi
+pi 2,0 f/ 2constant pi/2
+pi 4,0 f/ cosine f. \ Displays cos(Pi/4)
+
+: widecosine ( f-angle -- f-cosine )
+  dabs
+  pi/2 ud/mod drop 3 and ( Quadrant f-angle )
+
+  case
+    0 of                 cosine         endof
+    1 of dnegate pi/2 d+ cosine dnegate endof
+    2 of                 cosine dnegate endof
+    3 of dnegate pi/2 d+ cosine         endof
+  endcase
+
+  2-foldable ;
+
+: widesine ( f-angle -- f-sine )
+  dup >r \ Save sign
+  dabs
+  pi/2 ud/mod drop 3 and ( Quadrant f-angle )
+
+  case
+    0 of                 sine          endof
+    1 of dnegate pi/2 d+ sine          endof
+    2 of                 sine  dnegate endof
+    3 of dnegate pi/2 d+ sine  dnegate endof
+  endcase
+
+  r> 0< if dnegate then
+  2-foldable ;

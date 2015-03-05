@@ -1,0 +1,7 @@
+
+compiletoflash
+
+: cornerstone ( Name ) ( -- )
+  <builds begin here $1FF and while 0 , repeat
+  does>   begin dup  $1FF and while 1+  repeat eraseflashfrom
+; 
