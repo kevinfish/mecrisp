@@ -1,0 +1,3 @@
+*.txt linguist-language=Forth
+/ledcomm.txt  linguist-language=Text
+/common/assembler-readme.txt linguist-language=Text
